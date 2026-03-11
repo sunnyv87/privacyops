@@ -1,0 +1,93 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: privacyops
+      POSTGRES_PASSWORD: privacyops_dev
+      POSTGRES_DB: privacyops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U privacyops']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    command: redis-server --requirepass privacyops_dev
+    volumes:
+      - redis_data:/data
+
+  opensearch:
+    image: opensearchproject/opensearch:2.12.0
+    ports:
+      - '9200:9200'
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - '4222:4222'
+      - '8222:8222'
+    command: -js -m 8222
+
+  temporal:
+    image: temporalio/auto-setup:1.23
+    ports:
+      - '7233:7233'
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=privacyops
+      - POSTGRES_PWD=privacyops_dev
+      - POSTGRES_SEEDS=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    ports:
+      - '8233:8080'
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    ports:
+      - '8080:8080'
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    command: start-dev
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: privacyops
+      MINIO_ROOT_PASSWORD: privacyops_dev
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  opensearch_data:
+  minio_data:

@@ -1,0 +1,347 @@
+import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('Seeding database...');
+
+  // ============================================================================
+  // System Roles
+  // ============================================================================
+  const roles = [
+    {
+      id: randomUUID(),
+      name: 'Super Admin',
+      slug: 'super-admin',
+      description: 'Full platform access',
+      isSystem: true,
+      permissions: ['*'],
+    },
+    {
+      id: randomUUID(),
+      name: 'Tenant Admin',
+      slug: 'tenant-admin',
+      description: 'Full tenant administration',
+      isSystem: true,
+      permissions: [
+        'admin:tenant:configure',
+        'admin:users:manage',
+        'admin:roles:manage',
+        'dspm:*',
+        'discovery:*',
+        'classification:*',
+        'consent:*',
+        'dsar:*',
+        'risk:*',
+        'breach:*',
+        'retention:*',
+        'vendors:*',
+        'compliance:*',
+        'ropa:*',
+        'dashboard:*',
+        'audit:read',
+      ],
+    },
+    {
+      id: randomUUID(),
+      name: 'DPO / Privacy Officer',
+      slug: 'dpo',
+      description: 'Data Protection Officer',
+      isSystem: true,
+      permissions: [
+        'dspm:findings:read',
+        'dspm:connectors:read',
+        'discovery:assets:read',
+        'classification:*',
+        'consent:*',
+        'dsar:*',
+        'risk:*',
+        'breach:*',
+        'retention:*',
+        'vendors:read',
+        'compliance:*',
+        'ropa:*',
+        'dashboard:*',
+        'audit:read',
+      ],
+    },
+    {
+      id: randomUUID(),
+      name: 'CISO',
+      slug: 'ciso',
+      description: 'Chief Information Security Officer',
+      isSystem: true,
+      permissions: [
+        'dspm:*',
+        'discovery:*',
+        'classification:read',
+        'breach:*',
+        'risk:*',
+        'compliance:read',
+        'dashboard:*',
+        'audit:read',
+      ],
+    },
+    {
+      id: randomUUID(),
+      name: 'Compliance Manager',
+      slug: 'compliance-manager',
+      description: 'Compliance and regulatory management',
+      isSystem: true,
+      permissions: [
+        'dspm:findings:read',
+        'discovery:assets:read',
+        'classification:read',
+        'consent:*',
+        'dsar:*',
+        'risk:*',
+        'breach:read',
+        'retention:*',
+        'vendors:*',
+        'compliance:*',
+        'ropa:*',
+        'dashboard:*',
+        'audit:read',
+      ],
+    },
+    {
+      id: randomUUID(),
+      name: 'Security Analyst',
+      slug: 'security-analyst',
+      description: 'Security operations and analysis',
+      isSystem: true,
+      permissions: [
+        'dspm:findings:read',
+        'dspm:findings:update',
+        'dspm:connectors:read',
+        'discovery:assets:read',
+        'classification:read',
+        'breach:*',
+        'dashboard:read',
+      ],
+    },
+    {
+      id: randomUUID(),
+      name: 'Data Steward',
+      slug: 'data-steward',
+      description: 'Data ownership and stewardship',
+      isSystem: true,
+      permissions: [
+        'discovery:assets:read',
+        'discovery:assets:update',
+        'classification:read',
+        'classification:review',
+        'dsar:requests:read',
+        'dsar:requests:collect',
+        'retention:read',
+        'dashboard:read',
+      ],
+    },
+    {
+      id: randomUUID(),
+      name: 'Auditor',
+      slug: 'auditor',
+      description: 'Read-only audit access',
+      isSystem: true,
+      permissions: [
+        'dspm:findings:read',
+        'discovery:assets:read',
+        'classification:read',
+        'consent:read',
+        'dsar:read',
+        'risk:read',
+        'breach:read',
+        'retention:read',
+        'vendors:read',
+        'compliance:*',
+        'ropa:read',
+        'dashboard:read',
+        'audit:read',
+      ],
+    },
+  ];
+
+  for (const role of roles) {
+    await prisma.role.upsert({
+      where: { tenantId_slug: { tenantId: null as any, slug: role.slug } },
+      update: { permissions: role.permissions },
+      create: {
+        id: role.id,
+        name: role.name,
+        slug: role.slug,
+        description: role.description,
+        isSystem: role.isSystem,
+        permissions: role.permissions,
+        tenantId: null,
+      },
+    });
+  }
+
+  console.log(`Created ${roles.length} system roles`);
+
+  // ============================================================================
+  // Classification Labels (India-first + Global)
+  // ============================================================================
+  const labels = [
+    // India-specific PII
+    { name: 'Aadhaar Number', category: 'pii', sensitivityLevel: 5, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b[2-9]\\d{3}\\s?\\d{4}\\s?\\d{4}\\b'] } },
+    { name: 'PAN Number', category: 'pii', sensitivityLevel: 4, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b[A-Z]{5}\\d{4}[A-Z]\\b'] } },
+    { name: 'Indian Mobile Number', category: 'pii', sensitivityLevel: 3, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b(?:\\+91[\\s-]?)?[6-9]\\d{9}\\b'] } },
+    { name: 'GSTIN', category: 'business', sensitivityLevel: 2, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b\\d{2}[A-Z]{5}\\d{4}[A-Z]\\d[Z][A-Z\\d]\\b'] } },
+    { name: 'Indian Passport Number', category: 'pii', sensitivityLevel: 5, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b[A-Z]\\d{7}\\b'], keywords: ['passport'] } },
+    { name: 'IFSC Code', category: 'pfi', sensitivityLevel: 2, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b[A-Z]{4}0[A-Z\\d]{6}\\b'] } },
+    { name: 'Indian Voter ID', category: 'pii', sensitivityLevel: 4, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b[A-Z]{3}\\d{7}\\b'], keywords: ['voter', 'epic'] } },
+
+    // Global PII
+    { name: 'Email Address', category: 'pii', sensitivityLevel: 3, regulationTags: ['DPDP', 'GDPR'], detectionPatterns: { regex: ['\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b'] } },
+    { name: 'Phone Number', category: 'pii', sensitivityLevel: 3, regulationTags: ['DPDP', 'GDPR'], detectionPatterns: { regex: ['\\b\\+?\\d{1,3}[\\s-]?\\d{3,14}\\b'], keywords: ['phone', 'mobile', 'tel'] } },
+    { name: 'Full Name', category: 'pii', sensitivityLevel: 2, regulationTags: ['DPDP', 'GDPR'], detectionPatterns: { keywords: ['name', 'full_name', 'first_name', 'last_name', 'customer_name'] } },
+    { name: 'Date of Birth', category: 'pii', sensitivityLevel: 3, regulationTags: ['DPDP', 'GDPR'], detectionPatterns: { keywords: ['dob', 'birth_date', 'date_of_birth', 'birthday'] } },
+    { name: 'Physical Address', category: 'pii', sensitivityLevel: 3, regulationTags: ['DPDP', 'GDPR'], detectionPatterns: { keywords: ['address', 'street', 'city', 'postal_code', 'pincode', 'zip'] } },
+    { name: 'IP Address', category: 'pii', sensitivityLevel: 2, regulationTags: ['GDPR'], detectionPatterns: { regex: ['\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b'] } },
+
+    // Financial (PFI)
+    { name: 'Credit Card Number', category: 'pfi', sensitivityLevel: 5, regulationTags: ['PCI-DSS'], detectionPatterns: { regex: ['\\b(?:\\d{4}[\\s-]?){3}\\d{4}\\b'] } },
+    { name: 'Bank Account Number', category: 'pfi', sensitivityLevel: 5, regulationTags: ['DPDP'], detectionPatterns: { keywords: ['bank_account', 'account_number', 'acct_no'] } },
+    { name: 'UPI ID', category: 'pfi', sensitivityLevel: 3, regulationTags: ['DPDP'], detectionPatterns: { regex: ['\\b[\\w.-]+@[a-z]{2,}\\b'], keywords: ['upi', 'vpa'] } },
+
+    // Health (PHI)
+    { name: 'Health Record', category: 'phi', sensitivityLevel: 5, regulationTags: ['DPDP', 'GDPR'], detectionPatterns: { keywords: ['diagnosis', 'medical', 'health', 'patient', 'prescription'] } },
+
+    // US-specific
+    { name: 'SSN', category: 'pii', sensitivityLevel: 5, regulationTags: ['CCPA'], detectionPatterns: { regex: ['\\b\\d{3}-\\d{2}-\\d{4}\\b'] } },
+
+    // Credentials
+    { name: 'Password / Secret', category: 'sensitive', sensitivityLevel: 5, regulationTags: [], detectionPatterns: { keywords: ['password', 'secret', 'api_key', 'token', 'private_key'] } },
+  ];
+
+  for (const label of labels) {
+    await prisma.classificationLabel.create({
+      data: {
+        name: label.name,
+        category: label.category,
+        sensitivityLevel: label.sensitivityLevel,
+        regulationTags: label.regulationTags,
+        detectionPatterns: label.detectionPatterns,
+        isSystem: true,
+        tenantId: null,
+      },
+    });
+  }
+
+  console.log(`Created ${labels.length} classification labels`);
+
+  // ============================================================================
+  // Regulations
+  // ============================================================================
+  const dpdpId = randomUUID();
+  const gdprId = randomUUID();
+
+  await prisma.regulation.createMany({
+    data: [
+      {
+        id: dpdpId,
+        name: 'Digital Personal Data Protection Act, 2023',
+        shortName: 'DPDP',
+        jurisdiction: 'India',
+        version: '2023',
+        status: 'active',
+        description: 'India\'s comprehensive personal data protection legislation',
+      },
+      {
+        id: gdprId,
+        name: 'General Data Protection Regulation',
+        shortName: 'GDPR',
+        jurisdiction: 'European Union',
+        version: '2016/679',
+        status: 'active',
+        description: 'EU regulation on data protection and privacy',
+      },
+      {
+        name: 'ISO/IEC 27701:2019',
+        shortName: 'ISO27701',
+        jurisdiction: 'International',
+        version: '2019',
+        status: 'active',
+        description: 'Privacy Information Management System extension to ISO 27001',
+      },
+    ],
+  });
+
+  // Sample DPDP obligations
+  await prisma.obligation.createMany({
+    data: [
+      { regulationId: dpdpId, reference: 'Section 4', title: 'Consent for Processing', description: 'Personal data shall not be processed except for lawful purposes with consent of the Data Principal.', category: 'consent' },
+      { regulationId: dpdpId, reference: 'Section 5', title: 'Notice Requirements', description: 'Data Fiduciary must give notice with details of personal data and purpose of processing.', category: 'consent' },
+      { regulationId: dpdpId, reference: 'Section 6', title: 'Lawful Purpose', description: 'Processing must be for a lawful purpose for which the Data Principal has given consent.', category: 'purpose_limitation' },
+      { regulationId: dpdpId, reference: 'Section 8(1)', title: 'Data Security', description: 'Data Fiduciary shall protect personal data by taking reasonable security safeguards.', category: 'security' },
+      { regulationId: dpdpId, reference: 'Section 8(3)', title: 'Data Retention', description: 'Data Fiduciary shall erase personal data when consent is withdrawn or purpose is fulfilled.', category: 'retention' },
+      { regulationId: dpdpId, reference: 'Section 8(6)', title: 'Breach Notification', description: 'Data Fiduciary shall inform the Board and affected Data Principals in the event of a personal data breach.', category: 'breach' },
+      { regulationId: dpdpId, reference: 'Section 11', title: 'Rights of Data Principal', description: 'Data Principal has the right to access, correct, and erase personal data.', category: 'data_subject_rights' },
+    ],
+  });
+
+  console.log('Created regulations and obligations');
+
+  // ============================================================================
+  // Demo Tenant
+  // ============================================================================
+  const tenantId = randomUUID();
+  const adminUserId = randomUUID();
+
+  await prisma.tenant.create({
+    data: {
+      id: tenantId,
+      name: 'TechD Demo',
+      slug: 'techd-demo',
+      domain: 'techd.com',
+      subscriptionTier: 'enterprise',
+      status: 'active',
+      dataResidencyRegion: 'ap-south-1',
+      encryptionKeyId: 'demo-key-techd',
+    },
+  });
+
+  await prisma.user.create({
+    data: {
+      id: adminUserId,
+      tenantId,
+      email: 'admin@techd.com',
+      name: 'Demo Admin',
+      status: 'active',
+      authProvider: 'local',
+      mfaEnabled: false,
+    },
+  });
+
+  // Assign tenant-admin role
+  const tenantAdminRole = await prisma.role.findFirst({
+    where: { slug: 'tenant-admin', tenantId: null },
+  });
+
+  if (tenantAdminRole) {
+    await prisma.userRole.create({
+      data: {
+        userId: adminUserId,
+        roleId: tenantAdminRole.id,
+      },
+    });
+  }
+
+  console.log('Created demo tenant and admin user');
+  console.log(`  Tenant ID: ${tenantId}`);
+  console.log(`  Admin User ID: ${adminUserId}`);
+  console.log(`  Email: admin@techd.com`);
+
+  console.log('\nSeed completed successfully!');
+}
+
+main()
+  .catch((e) => {
+    console.error('Seed failed:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

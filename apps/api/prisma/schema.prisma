@@ -1,0 +1,808 @@
+// TechD PrivacyOps Platform — Database Schema
+// PostgreSQL with Row Level Security for multi-tenancy
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CORE: Tenancy & Identity
+// ============================================================================
+
+model Tenant {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String   @db.VarChar(255)
+  slug                String   @unique @db.VarChar(100)
+  domain              String?  @db.VarChar(255)
+  subscriptionTier    String   @default("trial") @map("subscription_tier") @db.VarChar(50)
+  status              String   @default("trial") @db.VarChar(50) // active, suspended, trial, deactivated
+  settings            Json?
+  dataResidencyRegion String   @map("data_residency_region") @db.VarChar(50)
+  encryptionKeyId     String   @map("encryption_key_id") @db.VarChar(255)
+  trialExpiresAt      DateTime? @map("trial_expires_at")
+  metadata            Json?
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users       User[]
+  dataSources DataSource[]
+  roles       Role[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  email        String    @db.VarChar(255)
+  name         String    @db.VarChar(255)
+  status       String    @default("invited") @db.VarChar(50) // active, invited, disabled
+  authProvider String    @default("local") @map("auth_provider") @db.VarChar(50)
+  externalId   String?   @map("external_id") @db.VarChar(255)
+  mfaEnabled   Boolean   @default(false) @map("mfa_enabled")
+  lastLoginAt  DateTime? @map("last_login_at")
+  preferences  Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  // Relations
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  userRoles UserRole[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([externalId])
+  @@map("users")
+}
+
+model Role {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String? @map("tenant_id") @db.Uuid // null = system role
+  name        String  @db.VarChar(100)
+  slug        String  @db.VarChar(100)
+  description String? @db.Text
+  permissions Json    // Array of permission strings
+  isSystem    Boolean @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant    Tenant?    @relation(fields: [tenantId], references: [id])
+  userRoles UserRole[]
+
+  @@unique([tenantId, slug])
+  @@map("roles")
+}
+
+model UserRole {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+  scope  Json?  // Optional scope restrictions
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+// ============================================================================
+// DSPM: Data Sources & Connectors
+// ============================================================================
+
+model DataSource {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  name             String    @db.VarChar(255)
+  type             String    @db.VarChar(50) // aws_s3, postgresql, etc.
+  status           String    @default("pending_setup") @db.VarChar(50)
+  connectionConfig Json      @map("connection_config") // Encrypted
+  authMethod       String    @map("auth_method") @db.VarChar(50)
+  lastConnectedAt  DateTime? @map("last_connected_at")
+  lastScanAt       DateTime? @map("last_scan_at")
+  scanSchedule     String?   @map("scan_schedule") @db.VarChar(50) // Cron
+  metadata         Json?
+  tags             Json?     @default("[]") // String array
+  createdBy        String?   @map("created_by") @db.Uuid
+  updatedBy        String?   @map("updated_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  // Relations
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  assets   Asset[]
+  scanJobs ScanJob[]
+
+  @@index([tenantId])
+  @@index([type])
+  @@index([status])
+  @@map("data_sources")
+}
+
+model ScanJob {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  dataSourceId String    @map("data_source_id") @db.Uuid
+  type         String    @db.VarChar(50) // discovery, classification, full, incremental
+  status       String    @default("queued") @db.VarChar(50)
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  stats        Json?     // {assets_found, fields_scanned, classifications_applied, errors}
+  errorMessage String?   @map("error_message") @db.Text
+  config       Json?
+  triggeredBy  String    @map("triggered_by") @db.VarChar(50) // scheduled, manual, event
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  dataSource DataSource @relation(fields: [dataSourceId], references: [id])
+
+  @@index([tenantId])
+  @@index([dataSourceId])
+  @@index([status])
+  @@map("scan_jobs")
+}
+
+// ============================================================================
+// Data Discovery & Classification
+// ============================================================================
+
+model Asset {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  dataSourceId    String    @map("data_source_id") @db.Uuid
+  name            String    @db.VarChar(500)
+  type            String    @db.VarChar(50) // table, bucket, collection, etc.
+  path            String?   @db.VarChar(2000)
+  parentAssetId   String?   @map("parent_asset_id") @db.Uuid
+  status          String    @default("active") @db.VarChar(50)
+  discoveredAt    DateTime  @default(now()) @map("discovered_at")
+  lastScannedAt   DateTime? @map("last_scanned_at")
+  rowCountEstimate BigInt?  @map("row_count_estimate")
+  sizeBytes       BigInt?   @map("size_bytes")
+  schemaSnapshot  Json?     @map("schema_snapshot")
+  ownerUserId     String?   @map("owner_user_id") @db.Uuid
+  tags            Json?     @default("[]")
+  metadata        Json?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  // Relations
+  dataSource      DataSource      @relation(fields: [dataSourceId], references: [id])
+  parentAsset     Asset?          @relation("AssetHierarchy", fields: [parentAssetId], references: [id])
+  childAssets     Asset[]         @relation("AssetHierarchy")
+  fields          AssetField[]
+  classifications Classification[]
+  riskFindings    RiskFinding[]
+
+  @@index([tenantId])
+  @@index([dataSourceId])
+  @@index([type])
+  @@index([path])
+  @@map("assets")
+}
+
+model AssetField {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String @map("tenant_id") @db.Uuid
+  assetId         String @map("asset_id") @db.Uuid
+  name            String @db.VarChar(500)
+  dataType        String? @map("data_type") @db.VarChar(100)
+  ordinalPosition Int?   @map("ordinal_position")
+  nullable        Boolean?
+  sampleValues    Json?  @map("sample_values") // Redacted/masked
+  profilingStats  Json?  @map("profiling_stats")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  asset           Asset            @relation(fields: [assetId], references: [id])
+  classifications Classification[]
+
+  @@index([assetId])
+  @@index([tenantId])
+  @@map("asset_fields")
+}
+
+model ClassificationLabel {
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String? @map("tenant_id") @db.Uuid // null = system
+  name             String  @db.VarChar(255)
+  category         String  @db.VarChar(50) // pii, pfi, phi, sensitive, business, public
+  sensitivityLevel Int     @map("sensitivity_level") // 1-5
+  regulationTags   Json?   @map("regulation_tags") // ["DPDP", "GDPR"]
+  detectionPatterns Json?  @map("detection_patterns") // {regex: [], keywords: []}
+  description      String? @db.Text
+  isSystem         Boolean @default(false) @map("is_system")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  classifications Classification[]
+
+  @@index([tenantId])
+  @@index([category])
+  @@map("classification_labels")
+}
+
+model Classification {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  assetId      String   @map("asset_id") @db.Uuid
+  assetFieldId String?  @map("asset_field_id") @db.Uuid
+  labelId      String   @map("label_id") @db.Uuid
+  confidence   Decimal  @db.Decimal(3, 2) // 0.00 - 1.00
+  method       String   @db.VarChar(50) // regex, dictionary, ml, manual
+  status       String   @default("auto_applied") @db.VarChar(50)
+  scanJobId    String?  @map("scan_job_id") @db.Uuid
+  reviewedBy   String?  @map("reviewed_by") @db.Uuid
+  reviewedAt   DateTime? @map("reviewed_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  asset      Asset              @relation(fields: [assetId], references: [id])
+  assetField AssetField?        @relation(fields: [assetFieldId], references: [id])
+  label      ClassificationLabel @relation(fields: [labelId], references: [id])
+
+  @@index([tenantId])
+  @@index([assetId])
+  @@index([labelId])
+  @@index([status])
+  @@map("classifications")
+}
+
+// ============================================================================
+// DSPM: Risk Findings
+// ============================================================================
+
+model RiskFinding {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String    @map("tenant_id") @db.Uuid
+  source               String    @db.VarChar(50) // dspm, dpia, tprm, compliance, manual
+  category             String    @db.VarChar(50) // exposure, access, encryption, retention, etc.
+  severity             String    @db.VarChar(50) // critical, high, medium, low, info
+  title                String    @db.VarChar(500)
+  description          String    @db.Text
+  assetId              String?   @map("asset_id") @db.Uuid
+  dataSourceId         String?   @map("data_source_id") @db.Uuid
+  status               String    @default("open") @db.VarChar(50)
+  riskScore            Decimal   @map("risk_score") @db.Decimal(5, 2) // 0-100
+  remediationGuidance  String?   @map("remediation_guidance") @db.Text
+  evidence             Json?
+  assignedTo           String?   @map("assigned_to") @db.Uuid
+  dueDate              DateTime? @map("due_date") @db.Date
+  resolvedAt           DateTime? @map("resolved_at")
+  scanJobId            String?   @map("scan_job_id") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
+
+  // Relations
+  asset Asset? @relation(fields: [assetId], references: [id])
+
+  @@index([tenantId])
+  @@index([severity])
+  @@index([status])
+  @@index([category])
+  @@index([assetId])
+  @@index([riskScore])
+  @@map("risk_findings")
+}
+
+// ============================================================================
+// Consent Management
+// ============================================================================
+
+model ProcessingPurpose {
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String  @map("tenant_id") @db.Uuid
+  name            String  @db.VarChar(255)
+  description     String? @db.Text
+  lawfulBasis     String  @map("lawful_basis") @db.VarChar(50)
+  isActive        Boolean @default(true) @map("is_active")
+  parentPurposeId String? @map("parent_purpose_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  consentRecords ConsentRecord[]
+
+  @@index([tenantId])
+  @@map("processing_purposes")
+}
+
+model ConsentNotice {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  name        String    @db.VarChar(255)
+  version     Int       @default(1)
+  status      String    @default("draft") @db.VarChar(50) // draft, published, archived
+  content     Json      // Structured notice content
+  purposes    Json      // Array of purpose definitions
+  publishedAt DateTime? @map("published_at")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  consentRecords ConsentRecord[]
+
+  @@index([tenantId])
+  @@map("consent_notices")
+}
+
+model DataSubject {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  externalId         String?   @map("external_id") @db.VarChar(500)
+  emailHash          String?   @map("email_hash") @db.VarChar(64)
+  identityAttributes Json      @map("identity_attributes") // Encrypted
+  status             String    @default("active") @db.VarChar(50)
+  firstSeenAt        DateTime  @default(now()) @map("first_seen_at")
+  lastActivityAt     DateTime? @map("last_activity_at")
+  jurisdiction       String?   @db.VarChar(50)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  consentRecords ConsentRecord[]
+  dsarRequests   DsarRequest[]
+
+  @@index([tenantId])
+  @@index([emailHash])
+  @@index([externalId])
+  @@map("data_subjects")
+}
+
+model ConsentRecord {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  dataSubjectId  String    @map("data_subject_id") @db.Uuid
+  noticeId       String    @map("notice_id") @db.Uuid
+  noticeVersion  Int       @map("notice_version")
+  purposeId      String    @map("purpose_id") @db.Uuid
+  status         String    @db.VarChar(50) // granted, denied, revoked, expired
+  grantedAt      DateTime? @map("granted_at")
+  revokedAt      DateTime? @map("revoked_at")
+  expiresAt      DateTime? @map("expires_at")
+  channel        String    @db.VarChar(100) // web, mobile, api, email, offline
+  ipAddress      String?   @map("ip_address") @db.VarChar(45) // Encrypted
+  userAgent      String?   @map("user_agent") @db.Text
+  proof          Json?
+  lawfulBasis    String    @map("lawful_basis") @db.VarChar(50)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  dataSubject DataSubject      @relation(fields: [dataSubjectId], references: [id])
+  notice      ConsentNotice    @relation(fields: [noticeId], references: [id])
+  purpose     ProcessingPurpose @relation(fields: [purposeId], references: [id])
+
+  @@index([tenantId])
+  @@index([dataSubjectId])
+  @@index([purposeId])
+  @@index([status])
+  @@map("consent_records")
+}
+
+// ============================================================================
+// DSAR (Data Subject Access Requests)
+// ============================================================================
+
+model DsarRequest {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  referenceNumber    String    @map("reference_number") @db.VarChar(50)
+  dataSubjectId      String?   @map("data_subject_id") @db.Uuid
+  type               String    @db.VarChar(50) // access, deletion, correction, portability, objection, restriction
+  status             String    @default("submitted") @db.VarChar(50)
+  channel            String    @db.VarChar(100)
+  submittedAt        DateTime  @default(now()) @map("submitted_at")
+  verifiedAt         DateTime? @map("verified_at")
+  dueDate            DateTime  @map("due_date")
+  completedAt        DateTime? @map("completed_at")
+  requestorInfo      Json      @map("requestor_info") // Encrypted
+  identityProof      Json?     @map("identity_proof")
+  notes              String?   @db.Text
+  assignedTo         String?   @map("assigned_to") @db.Uuid
+  legalHold          Boolean   @default(false) @map("legal_hold")
+  rejectionReason    String?   @map("rejection_reason") @db.Text
+  responsePackageUrl String?   @map("response_package_url") @db.VarChar(2000)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  dataSubject DataSubject? @relation(fields: [dataSubjectId], references: [id])
+
+  @@unique([tenantId, referenceNumber])
+  @@index([tenantId])
+  @@index([status])
+  @@index([type])
+  @@index([dueDate])
+  @@map("dsar_requests")
+}
+
+// ============================================================================
+// Privacy Risk Assessment (DPIA/PIA)
+// ============================================================================
+
+model PrivacyAssessment {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  title                 String    @db.VarChar(500)
+  type                  String    @db.VarChar(50) // dpia, pia, tia, lia
+  status                String    @default("draft") @db.VarChar(50)
+  templateId            String?   @map("template_id") @db.Uuid
+  ownerId               String    @map("owner_id") @db.Uuid
+  reviewerId            String?   @map("reviewer_id") @db.Uuid
+  processingDescription String    @map("processing_description") @db.Text
+  dataCategories        Json      @map("data_categories")
+  riskItems             Json      @default("[]") @map("risk_items")
+  overallRiskScore      Decimal?  @map("overall_risk_score") @db.Decimal(5, 2)
+  overallRiskLevel      String?   @map("overall_risk_level") @db.VarChar(50)
+  approvedAt            DateTime? @map("approved_at")
+  approvedBy            String?   @map("approved_by") @db.Uuid
+  nextReviewDate        DateTime? @map("next_review_date") @db.Date
+  linkedRopaId          String?   @map("linked_ropa_id") @db.Uuid
+  evidenceIds           Json?     @map("evidence_ids")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  deletedAt             DateTime? @map("deleted_at")
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([type])
+  @@map("privacy_assessments")
+}
+
+// ============================================================================
+// Incident & Breach Management
+// ============================================================================
+
+model Incident {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                String    @map("tenant_id") @db.Uuid
+  referenceNumber         String    @map("reference_number") @db.VarChar(50)
+  title                   String    @db.VarChar(500)
+  status                  String    @default("reported") @db.VarChar(50)
+  severity                String    @db.VarChar(50)
+  isPersonalDataBreach    Boolean?  @map("is_personal_data_breach")
+  detectedAt              DateTime  @map("detected_at")
+  reportedAt              DateTime  @default(now()) @map("reported_at")
+  containedAt             DateTime? @map("contained_at")
+  resolvedAt              DateTime? @map("resolved_at")
+  description             String    @db.Text
+  affectedAssets          Json?     @map("affected_assets")
+  affectedDataTypes       Json?     @map("affected_data_types")
+  estimatedSubjectsAffected Int?    @map("estimated_subjects_affected")
+  rootCause               String?   @map("root_cause") @db.Text
+  remediationActions      Json?     @map("remediation_actions")
+  regulatoryNotifications Json?     @map("regulatory_notifications")
+  assignedTo              String?   @map("assigned_to") @db.Uuid
+  forensicEvidenceIds     Json?     @map("forensic_evidence_ids")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  deletedAt               DateTime? @map("deleted_at")
+
+  @@unique([tenantId, referenceNumber])
+  @@index([tenantId])
+  @@index([status])
+  @@index([severity])
+  @@map("incidents")
+}
+
+// ============================================================================
+// Retention & Governance
+// ============================================================================
+
+model RetentionPolicy {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  name                  String   @db.VarChar(255)
+  description           String?  @db.Text
+  recordCategory        String   @map("record_category") @db.VarChar(255)
+  retentionPeriodDays   Int      @map("retention_period_days")
+  actionOnExpiry        String   @map("action_on_expiry") @db.VarChar(50) // delete, archive, review, anonymize
+  legalBasis            String?  @map("legal_basis") @db.Text
+  applicableRegulations Json?    @map("applicable_regulations")
+  status                String   @default("draft") @db.VarChar(50)
+  appliesTo             Json?    @map("applies_to") // Asset/data source filters
+  createdBy             String?  @map("created_by") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  deletedAt             DateTime? @map("deleted_at")
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("retention_policies")
+}
+
+// ============================================================================
+// Vendor / Third-Party Risk
+// ============================================================================
+
+model Vendor {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  name             String    @db.VarChar(255)
+  type             String    @db.VarChar(50) // processor, sub_processor, controller, joint_controller
+  riskTier         String    @map("risk_tier") @db.VarChar(50)
+  status           String    @default("active") @db.VarChar(50)
+  country          String?   @db.VarChar(100)
+  contactEmail     String?   @map("contact_email") @db.VarChar(255)
+  servicesProvided String?   @map("services_provided") @db.Text
+  dataShared       Json?     @map("data_shared")
+  dpaStatus        String?   @map("dpa_status") @db.VarChar(50)
+  dpaDocumentId    String?   @map("dpa_document_id") @db.Uuid
+  contractExpiry   DateTime? @map("contract_expiry") @db.Date
+  lastAssessmentDate DateTime? @map("last_assessment_date") @db.Date
+  nextReviewDate   DateTime? @map("next_review_date") @db.Date
+  riskScore        Decimal?  @map("risk_score") @db.Decimal(5, 2)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  assessments VendorAssessment[]
+
+  @@index([tenantId])
+  @@index([riskTier])
+  @@index([status])
+  @@map("vendors")
+}
+
+model VendorAssessment {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  vendorId    String    @map("vendor_id") @db.Uuid
+  templateId  String?   @map("template_id") @db.Uuid
+  status      String    @default("draft") @db.VarChar(50)
+  sentAt      DateTime? @map("sent_at")
+  dueDate     DateTime? @map("due_date") @db.Date
+  submittedAt DateTime? @map("submitted_at")
+  reviewedBy  String?   @map("reviewed_by") @db.Uuid
+  responses   Json?
+  riskScore   Decimal?  @map("risk_score") @db.Decimal(5, 2)
+  findings    Json?
+  remediationItems Json? @map("remediation_items")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([status])
+  @@map("vendor_assessments")
+}
+
+// ============================================================================
+// Compliance & Regulatory
+// ============================================================================
+
+model Regulation {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String?  @map("tenant_id") @db.Uuid // null = system
+  name          String   @db.VarChar(255)
+  shortName     String   @map("short_name") @db.VarChar(50)
+  jurisdiction  String   @db.VarChar(100)
+  version       String?  @db.VarChar(50)
+  effectiveDate DateTime? @map("effective_date") @db.Date
+  status        String   @default("active") @db.VarChar(50)
+  description   String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  obligations Obligation[]
+
+  @@index([tenantId])
+  @@index([shortName])
+  @@map("regulations")
+}
+
+model Obligation {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  regulationId String @map("regulation_id") @db.Uuid
+  reference    String @db.VarChar(100) // e.g., "Article 5(1)(a)"
+  title        String @db.VarChar(500)
+  description  String @db.Text
+  category     String? @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  regulation Regulation @relation(fields: [regulationId], references: [id])
+  controls   ObligationControl[]
+
+  @@index([regulationId])
+  @@map("obligations")
+}
+
+model Control {
+  id                   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String? @map("tenant_id") @db.Uuid
+  code                 String  @db.VarChar(50) // e.g., "CTRL-CM-001"
+  title                String  @db.VarChar(500)
+  description          String  @db.Text
+  category             String  @db.VarChar(100)
+  implementationStatus String? @map("implementation_status") @db.VarChar(50)
+  ownerId              String? @map("owner_id") @db.Uuid
+  evidenceIds          Json?   @map("evidence_ids")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  obligations ObligationControl[]
+
+  @@index([tenantId])
+  @@index([code])
+  @@map("controls")
+}
+
+model ObligationControl {
+  obligationId String @map("obligation_id") @db.Uuid
+  controlId    String @map("control_id") @db.Uuid
+
+  obligation Obligation @relation(fields: [obligationId], references: [id])
+  control    Control    @relation(fields: [controlId], references: [id])
+
+  @@id([obligationId, controlId])
+  @@map("obligation_controls")
+}
+
+// ============================================================================
+// Evidence & Audit
+// ============================================================================
+
+model EvidenceArtifact {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  name             String    @db.VarChar(500)
+  type             String    @db.VarChar(50) // document, screenshot, log, report, certificate
+  filePath         String?   @map("file_path") @db.VarChar(2000)
+  fileHash         String?   @map("file_hash") @db.VarChar(64)
+  mimeType         String?   @map("mime_type") @db.VarChar(100)
+  sizeBytes        BigInt?   @map("size_bytes")
+  linkedControlIds Json?     @map("linked_control_ids")
+  linkedObligationIds Json?  @map("linked_obligation_ids")
+  collectedAt      DateTime  @default(now()) @map("collected_at")
+  expiresAt        DateTime? @map("expires_at")
+  metadata         Json?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  @@index([tenantId])
+  @@map("evidence_artifacts")
+}
+
+model RopaEntry {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
+  title                  String    @db.VarChar(500)
+  status                 String    @default("draft") @db.VarChar(50)
+  processingPurpose      String    @map("processing_purpose") @db.Text
+  lawfulBasis            String    @map("lawful_basis") @db.VarChar(50)
+  dataSubjectCategories  Json      @map("data_subject_categories")
+  personalDataCategories Json      @map("personal_data_categories")
+  recipients             Json?
+  crossBorderTransfers   Json?     @map("cross_border_transfers")
+  retentionPeriod        String?   @map("retention_period") @db.VarChar(255)
+  securityMeasures       String?   @map("security_measures") @db.Text
+  systemsInvolved        Json?     @map("systems_involved")
+  ownerId                String    @map("owner_id") @db.Uuid
+  approvedBy             String?   @map("approved_by") @db.Uuid
+  approvedAt             DateTime? @map("approved_at")
+  lastReviewedAt         DateTime? @map("last_reviewed_at")
+  nextReviewDate         DateTime? @map("next_review_date") @db.Date
+  linkedDpiaId           String?   @map("linked_dpia_id") @db.Uuid
+  linkedConsentPurposes  Json?     @map("linked_consent_purposes")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  deletedAt              DateTime? @map("deleted_at")
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("ropa_entries")
+}
+
+model AuditLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  actorId       String?  @map("actor_id") @db.Uuid
+  actorType     String   @map("actor_type") @db.VarChar(50)
+  action        String   @db.VarChar(100)
+  entityType    String   @map("entity_type") @db.VarChar(100)
+  entityId      String   @map("entity_id") @db.Uuid
+  changes       Json?
+  ipAddress     String?  @map("ip_address") @db.VarChar(45)
+  userAgent     String?  @map("user_agent") @db.Text
+  timestamp     DateTime @default(now())
+  integrityHash String   @map("integrity_hash") @db.VarChar(64)
+
+  @@index([tenantId])
+  @@index([actorId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// AI Recommendations
+// ============================================================================
+
+model AiRecommendation {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  type           String    @db.VarChar(50) // classification, control, remediation, summary, draft
+  entityType     String    @map("entity_type") @db.VarChar(100)
+  entityId       String    @map("entity_id") @db.Uuid
+  recommendation Json
+  confidence     Decimal?  @db.Decimal(3, 2)
+  modelId        String    @map("model_id") @db.VarChar(100)
+  promptHash     String?   @map("prompt_hash") @db.VarChar(64)
+  status         String    @default("pending") @db.VarChar(50)
+  reviewedBy     String?   @map("reviewed_by") @db.Uuid
+  reviewedAt     DateTime? @map("reviewed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@map("ai_recommendations")
+}
+
+// ============================================================================
+// Cross-border Transfers
+// ============================================================================
+
+model CrossBorderTransfer {
+  id                   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String  @map("tenant_id") @db.Uuid
+  sourceCountry        String  @map("source_country") @db.VarChar(100)
+  destinationCountry   String  @map("destination_country") @db.VarChar(100)
+  transferMechanism    String  @map("transfer_mechanism") @db.VarChar(50)
+  dataCategories       Json    @map("data_categories")
+  recipientName        String  @map("recipient_name") @db.VarChar(255)
+  recipientType        String  @map("recipient_type") @db.VarChar(50)
+  status               String  @default("active") @db.VarChar(50)
+  safeguards           String? @db.Text
+  tiaAssessmentId      String? @map("tia_assessment_id") @db.Uuid
+  linkedRopaId         String? @map("linked_ropa_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
+
+  @@index([tenantId])
+  @@map("cross_border_transfers")
+}
+
+// ============================================================================
+// Workflow Tracking
+// ============================================================================
+
+model Workflow {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  type               String    @db.VarChar(50) // dsar, breach, dpia, retention, vendor_review
+  status             String    @default("active") @db.VarChar(50)
+  entityType         String    @map("entity_type") @db.VarChar(100)
+  entityId           String    @map("entity_id") @db.Uuid
+  currentStep        String?   @map("current_step") @db.VarChar(100)
+  temporalWorkflowId String?   @map("temporal_workflow_id") @db.VarChar(500)
+  startedAt          DateTime  @default(now()) @map("started_at")
+  completedAt        DateTime? @map("completed_at")
+  metadata           Json?
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@map("workflows")
+}

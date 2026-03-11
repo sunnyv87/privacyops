@@ -91,11 +91,18 @@ export class DiscoveryService {
     });
 
     try {
-      const connector = this.connectorRegistry.get(scanJob.dataSource.type);
+      const connector = this.connectorRegistry.create(scanJob.dataSource.type as any);
       const config = scanJob.dataSource.connectionConfig as Record<string, unknown>;
 
+      await connector.initialize({
+        type: scanJob.dataSource.type as any,
+        credentials: config,
+        options: {},
+      });
+
       let assetsDiscovered = 0;
-      for await (const asset of connector.discoverAssets(config, {})) {
+      try {
+      for await (const asset of connector.listAssets()) {
         const dbAsset = await this.prisma.asset.upsert({
           where: {
             tenantId_dataSourceId_externalId: {
@@ -144,6 +151,9 @@ export class DiscoveryService {
         }
 
         assetsDiscovered++;
+      }
+      } finally {
+        await connector.disconnect();
       }
 
       await this.prisma.scanJob.update({

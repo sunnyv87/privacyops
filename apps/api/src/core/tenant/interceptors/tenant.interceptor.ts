@@ -20,7 +20,8 @@ export class TenantInterceptor implements NestInterceptor {
     next: CallHandler,
   ): Promise<Observable<any>> {
     const request = context.switchToHttp().getRequest();
-    const tenantId = request.user?.tenantId || request.headers['x-tenant-id'];
+    // Tenant ID MUST come from authenticated JWT only — never from request headers
+    const tenantId = request.user?.tenantId;
 
     if (tenantId) {
       await this.prisma.setTenantContext(tenantId);

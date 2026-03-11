@@ -179,3 +179,93 @@ export enum WorkflowStatus {
   FAILED = 'failed',
   CANCELLED = 'cancelled',
 }
+
+export enum ApprovalStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  EXPIRED = 'expired',
+}
+
+export enum AuthProvider {
+  LOCAL = 'local',
+  OIDC = 'oidc',
+  SAML = 'saml',
+  SCIM = 'scim',
+}
+
+export enum Permission {
+  // Wildcard
+  ALL = '*',
+
+  // Admin
+  ADMIN_TENANT_CONFIGURE = 'admin:tenant:configure',
+  ADMIN_USERS_MANAGE = 'admin:users:manage',
+  ADMIN_ROLES_MANAGE = 'admin:roles:manage',
+  ADMIN_SECRETS_READ = 'admin:secrets:read',
+
+  // Users
+  USERS_CREATE = 'users:users:create',
+  USERS_READ = 'users:users:read',
+  USERS_UPDATE = 'users:users:update',
+  USERS_DELETE = 'users:users:delete',
+
+  // DSPM
+  DSPM_ALL = 'dspm:*',
+  DSPM_FINDINGS_READ = 'dspm:findings:read',
+  DSPM_FINDINGS_UPDATE = 'dspm:findings:update',
+  DSPM_CONNECTORS_READ = 'dspm:connectors:read',
+
+  // Discovery
+  DISCOVERY_ALL = 'discovery:*',
+  DISCOVERY_ASSETS_READ = 'discovery:assets:read',
+  DISCOVERY_ASSETS_UPDATE = 'discovery:assets:update',
+
+  // Classification
+  CLASSIFICATION_ALL = 'classification:*',
+  CLASSIFICATION_READ = 'classification:read',
+  CLASSIFICATION_REVIEW = 'classification:review',
+
+  // Consent
+  CONSENT_ALL = 'consent:*',
+  CONSENT_READ = 'consent:read',
+
+  // DSAR
+  DSAR_ALL = 'dsar:*',
+  DSAR_READ = 'dsar:read',
+  DSAR_PII_READ = 'dsar:pii:read',
+
+  // Risk
+  RISK_ALL = 'risk:*',
+  RISK_READ = 'risk:read',
+
+  // Breach
+  BREACH_ALL = 'breach:*',
+  BREACH_READ = 'breach:read',
+
+  // Retention
+  RETENTION_ALL = 'retention:*',
+  RETENTION_READ = 'retention:read',
+
+  // Vendors
+  VENDORS_ALL = 'vendors:*',
+  VENDORS_READ = 'vendors:read',
+
+  // Compliance
+  COMPLIANCE_ALL = 'compliance:*',
+  COMPLIANCE_READ = 'compliance:read',
+
+  // RoPA
+  ROPA_ALL = 'ropa:*',
+  ROPA_READ = 'ropa:read',
+
+  // Dashboard
+  DASHBOARD_ALL = 'dashboard:*',
+  DASHBOARD_READ = 'dashboard:read',
+
+  // Audit
+  AUDIT_READ = 'audit:read',
+  AUDIT_ADMIN = 'audit:admin',
+  AUDIT_EXPORT = 'audit:export',
+  AUDIT_PII_READ = 'audit:pii:read',
+}

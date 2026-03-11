@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
 // Core modules
 import { PrismaModule } from './core/prisma/prisma.module';
@@ -11,11 +11,16 @@ import { EventsModule } from './core/events/events.module';
 import { SearchModule } from './core/search/search.module';
 import { WorkflowModule } from './core/workflow/workflow.module';
 import { NotificationsModule } from './core/notifications/notifications.module';
+import { CryptoModule } from './core/crypto/crypto.module';
+import { SecurityEventsModule } from './core/security/security-events.module';
 
 // Guards
 import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
 import { TenantGuard } from './core/tenant/guards/tenant.guard';
 import { PermissionsGuard } from './core/auth/guards/permissions.guard';
+
+// Interceptors
+import { FieldMaskInterceptor } from './core/auth/interceptors/field-mask.interceptor';
 
 // Feature modules
 import { ConnectorsModule } from './modules/connectors/connectors.module';
@@ -32,6 +37,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
 import { RopaModule } from './modules/ropa/ropa.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { UsersModule } from './modules/users/users.module';
+import { ScimModule } from './modules/scim/scim.module';
 import { HealthModule } from './core/health/health.module';
 
 @Module({
@@ -44,17 +50,20 @@ import { HealthModule } from './core/health/health.module';
 
     // Core
     PrismaModule,
-    AuthModule,
+    CryptoModule,
+    AuthModule.register(),
     TenantModule,
     AuditModule,
     EventsModule,
     SearchModule,
     WorkflowModule,
     NotificationsModule,
+    SecurityEventsModule,
     HealthModule,
 
     // Feature modules
     UsersModule,
+    ScimModule,
     ConnectorsModule,
     DiscoveryModule,
     ClassificationModule,
@@ -74,6 +83,8 @@ import { HealthModule } from './core/health/health.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    // Global interceptors
+    { provide: APP_INTERCEPTOR, useClass: FieldMaskInterceptor },
   ],
 })
 export class AppModule {}

@@ -5,6 +5,24 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  // Validate critical secrets at startup
+  const jwtSecret = process.env.JWT_SECRET;
+  if (
+    !jwtSecret ||
+    jwtSecret.length < 32 ||
+    jwtSecret.includes('change') ||
+    jwtSecret.includes('dev-secret')
+  ) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'JWT_SECRET must be at least 32 characters and not a default value in production',
+      );
+    }
+    console.warn(
+      '⚠ WARNING: Using weak JWT_SECRET. Set a strong 256-bit secret for production.',
+    );
+  }
+
   const app = await NestFactory.create(AppModule);
 
   // Security

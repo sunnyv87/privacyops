@@ -14,27 +14,38 @@ export class PrismaService
     await this.$disconnect();
   }
 
+  private static readonly UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   /**
    * Set the current tenant context for Row Level Security.
-   * Must be called at the start of every request.
+   * Uses set_config with parameterized value to prevent SQL injection.
    */
   async setTenantContext(tenantId: string): Promise<void> {
+    if (!PrismaService.UUID_RE.test(tenantId)) {
+      throw new Error('Invalid tenant ID format');
+    }
     await this.$executeRawUnsafe(
-      `SET app.current_tenant = '${tenantId}'`,
+      `SELECT set_config('app.current_tenant', $1, false)`,
+      tenantId,
     );
   }
 
   /**
    * Execute a callback within a tenant context.
-   * Uses a transaction to ensure the tenant context is set for all queries.
+   * Uses a transaction with SET LOCAL to scope context to the transaction.
    */
   async withTenant<T>(
     tenantId: string,
     callback: (prisma: PrismaClient) => Promise<T>,
   ): Promise<T> {
+    if (!PrismaService.UUID_RE.test(tenantId)) {
+      throw new Error('Invalid tenant ID format');
+    }
     return this.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(
-        `SET LOCAL app.current_tenant = '${tenantId}'`,
+        `SELECT set_config('app.current_tenant', $1, true)`,
+        tenantId,
       );
       return callback(tx as PrismaClient);
     });

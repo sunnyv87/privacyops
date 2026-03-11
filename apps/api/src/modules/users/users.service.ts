@@ -3,7 +3,9 @@ import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
-import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
+
+const BCRYPT_ROUNDS = 12;
 
 @Injectable()
 export class UsersService {
@@ -27,7 +29,7 @@ export class UsersService {
         email: dto.email,
         name: dto.name,
         passwordHash: dto.password
-          ? crypto.createHash('sha256').update(dto.password).digest('hex')
+          ? await bcrypt.hash(dto.password, BCRYPT_ROUNDS)
           : null,
         isActive: true,
         authProvider: 'local',

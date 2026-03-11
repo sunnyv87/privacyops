@@ -89,3 +89,31 @@ export function useVendors(params?: Record<string, any>) {
 export function useCompliance() {
   return useApiQuery<any>(['compliance', 'scorecard'], '/compliance/scorecard');
 }
+
+export function useRetentionPolicies(params?: Record<string, any>) {
+  return useApiQuery<any>(['retention', 'policies'], '/retention/policies', params);
+}
+
+export function useAssessments(params?: Record<string, any>) {
+  return useApiQuery<any>(['assessments'], '/assessments', params);
+}
+
+export function useRopaEntries(params?: Record<string, any>) {
+  return useApiQuery<any>(['ropa'], '/ropa/entries', params);
+}
+
+export function useUsers(params?: Record<string, any>) {
+  return useApiQuery<any>(['users'], '/users', params);
+}
+
+export function useRoles() {
+  return useApiQuery<any>(['roles'], '/users/roles');
+}
+
+export function useClassificationLabels() {
+  return useApiQuery<any>(['classification', 'labels'], '/classification/labels');
+}
+
+export function useAuditLogs(params?: Record<string, any>) {
+  return useApiQuery<any>(['audit'], '/audit/logs', params);
+}

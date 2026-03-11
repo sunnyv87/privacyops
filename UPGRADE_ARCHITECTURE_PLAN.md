@@ -1,1340 +1,1515 @@
-# TechD PrivacyOps — Enterprise Upgrade Architecture Plan
-## Data Security Intelligence Platform — Full Module Upgrade Specification
-
-**Generated:** 2026-03-11
-**Repository:** privacyops (NestJS + Next.js + Prisma + Temporal + NATS + OpenSearch)
-**Branch:** claude/privacyops-scaffold-01V167DUhtLLKXVfpnQmbeP6
+# PrivacyOps Ultra Upgrade Architecture Plan
+# AI-Native Data Security Intelligence Platform
 
 ---
 
-## REPOSITORY STATE SUMMARY
+## Executive Summary
 
-### Existing Infrastructure
-| Layer | Technology | Status |
-|-------|-----------|--------|
-| API Framework | NestJS 10.x | Operational |
-| Database ORM | Prisma (PostgreSQL) | 27 models defined |
-| Workflow Engine | Temporal.io | 4 workflows (scan, dsar, breach, retention) |
-| Event Bus | NATS JetStream | 35 event types defined |
-| Search | OpenSearch | Basic index/search/delete |
-| Auth | JWT + OIDC + SAML + MFA | Complete |
-| Frontend | Next.js 14 + React Query + Tailwind | 15 pages |
-| Shared Types | packages/shared-types | Enums + event types |
+This document defines the upgrade architecture for transforming PrivacyOps from a privacy operations platform into an AI-native Data Security Intelligence Platform. The plan introduces 14 advanced AI-driven modules that extend — never replace — the existing 23 modules, 50+ database models, 46 services, and 7 data connectors already in production.
 
-### Existing Modules (15 feature modules, 15 core modules)
-- **Core:** Auth, RBAC, ABAC, Audit (chain-hashed), Crypto, Events, Search, Tenant, Workflow, Notifications, SCIM, Health, Security Events, Prisma, Approval
-- **Feature:** Connectors (2 implementations), Discovery, Classification, DSPM, Consent, DSAR, Incidents, Retention, RoPA, Vendors, Assessments, Compliance, Dashboard, Users
+**Design Principles:**
+- Extend existing modules; never recreate
+- Backward-compatible schema evolution (additive columns, new tables)
+- Event-driven integration via existing NATS JetStream bus
+- RBAC/audit enforcement on all new endpoints
+- Horizontal scalability preserved (stateless services, Temporal workflows)
 
-### Connector Registry
-- Implemented: `aws_s3`, `postgresql`
-- Type definitions exist for: `mysql`, `mongodb`, `azure_blob`, `gcp_storage`, `snowflake`, `bigquery`, `google_drive`, `onedrive`, `sharepoint`, `salesforce`, `github`, `slack`, `m365`
+**Infrastructure Dependencies (New):**
+- LLM API (Anthropic Claude) — already configured via `ANTHROPIC_API_KEY`
+- Vector store (pgvector extension on existing PostgreSQL)
+- Redis streams for real-time telemetry aggregation
 
 ---
 
-## MODULE 1: WORKFLOW ENGINE UPGRADE
+## CURRENT PLATFORM ARCHITECTURE SUMMARY
 
-### Existing Implementation
-- `core/workflow/workflow.service.ts` — 4 workflow starters (scan, dsar, breach, retention)
-- `core/workflow/temporal.client.ts` — Temporal client wrapper
-- 4 workflow definitions: `scan`, `dsar`, `breach`, `retention`
-- 4 activity files with stub implementations
-- 5 task queues defined
-- `Workflow` model in Prisma with `temporalWorkflowId` tracking
+### Technology Stack
+| Layer | Technology |
+|-------|-----------|
+| API Framework | NestJS 10.x |
+| Database ORM | Prisma (PostgreSQL 15) |
+| Workflow Engine | Temporal.io |
+| Event Bus | NATS JetStream (7-day retention, 1M msg limit) |
+| Search | OpenSearch 2.10 |
+| Auth | JWT + OIDC (Keycloak) + SAML + MFA |
+| Cache | Redis 7 |
+| Storage | MinIO/S3 |
+| Frontend | Next.js + React Query + Tailwind |
+| Encryption | KMS + AES-256 |
 
-### Upgrade Architecture
-Add structured task management, DPIA approval workflows, remediation approval workflows, vendor review workflows, data deletion approval workflows, and event-driven triggers.
+### Existing Modules (23)
+ai-governance, vendors, users, retention, discovery, compliance, incidents, identity-access, scim, attack-paths, remediation, assessments, dspm, shadow-data, connectors, lineage, dsar, ropa, consent, dashboard, data-graph, classification
 
-### Schema Changes
-```
-NEW MODEL: WorkflowTask
-  id              UUID PK
-  tenantId        UUID
-  workflowId      UUID FK → Workflow
-  taskType        VARCHAR(50)  // review, approve, execute, notify, verify
-  title           VARCHAR(500)
-  description     TEXT
-  ownerId         UUID FK → User
-  assigneeId      UUID?
-  priority        VARCHAR(20)  // critical, high, medium, low
-  status          VARCHAR(50)  // pending, in_progress, completed, blocked, skipped
-  dueDate         TIMESTAMP?
-  completedAt     TIMESTAMP?
-  auditEvidence   JSON?        // Links to evidence artifacts
-  metadata        JSON?
-  dependsOnTaskId UUID?        // Task dependency chain
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
+### Existing Database Models (50+)
+Tenant, User, Role, UserRole, ApiKey, ScimToken, DataSource, ScanJob, Asset, AssetField, ClassificationLabel, Classification, RiskFinding, EntityRiskProfile, RemediationAction, DataLineageRecord, AttackPath, IdentityAccessMapping, ShadowDataAlert, BreachDetectionRule, DsarRequest, DataSubject, ConsentRecord, ConsentNotice, ProcessingPurpose, PrivacyAssessment, RopaEntry, CrossBorderTransfer, RetentionPolicy, RetentionViolation, DispositionCertificate, Vendor, VendorAssessment, Regulation, Obligation, Control, ObligationControl, ComplianceFramework, ControlGap, Workflow, WorkflowTask, ApprovalRequest, AuditLog, AuditChainState, EvidenceArtifact, AiSystem, AiRecommendation, AiDatasetUsage, DataGraphNode, DataGraphEdge, Incident
 
-MODIFY MODEL: Workflow
-  ADD FIELD: triggerType    VARCHAR(50)  // manual, event, schedule, threshold
-  ADD FIELD: triggerConfig  JSON?        // Event filter / schedule config
-  ADD FIELD: priority       VARCHAR(20)
-  ADD FIELD: assigneeId     UUID?
-```
-
-### New Workflow Definitions
-- `dpiaApprovalWorkflow` — Multi-stage DPIA review with escalation
-- `remediationApprovalWorkflow` — Remediation action with rollback support
-- `vendorReviewWorkflow` — Vendor assessment with SLA tracking
-- `dataDeletionApprovalWorkflow` — Multi-approver deletion with legal hold check
-
-### Event Triggers to Add
-| Event | Trigger |
-|-------|---------|
-| `finding.created` (severity=critical) | → remediationApprovalWorkflow |
-| `dsar.received` | → dsarWorkflow (exists) |
-| `incident.reported` | → breachNotificationWorkflow (exists) |
-| `shadow_data.detected` | → remediationApprovalWorkflow |
-| `attack_path.detected` | → remediationApprovalWorkflow |
-| `assessment.submitted` | → dpiaApprovalWorkflow |
-| `vendor.assessment.due` | → vendorReviewWorkflow |
-| `retention.policy.triggered` | → dataDeletionApprovalWorkflow |
-
-### Services to Extend
-- `WorkflowService` — Add starters for new workflows, task management methods
-- `EventBusService` — Add event-trigger subscription registration
-
-### APIs to Extend
-- `GET /workflows/:id/tasks` — List tasks for a workflow
-- `PATCH /workflows/:id/tasks/:taskId` — Update task status
-- `POST /workflows/trigger` — Manual trigger with event payload
-
-### Files to Modify
-- `apps/api/src/core/workflow/workflow.service.ts`
-- `apps/api/src/core/workflow/workflow.module.ts`
-- `apps/api/prisma/schema.prisma`
-- `packages/shared-types/src/events.ts`
-
-### New Files
-- `apps/api/src/core/workflow/workflows/dpia-approval.workflow.ts`
-- `apps/api/src/core/workflow/workflows/remediation.workflow.ts`
-- `apps/api/src/core/workflow/workflows/vendor-review.workflow.ts`
-- `apps/api/src/core/workflow/workflows/data-deletion.workflow.ts`
-- `apps/api/src/core/workflow/activities/approval.activities.ts`
-- `apps/api/src/core/workflow/activities/vendor.activities.ts`
-- `apps/api/src/core/workflow/event-trigger.service.ts`
-
-### Migration Impact
-- New table: `workflow_tasks` — No data migration needed
-- Existing `workflows` table gets 3 new nullable columns — Backward compatible
+### Key Architectural Patterns
+1. Multi-tenancy via tenantId propagation (header/JWT)
+2. Event sourcing via NATS JetStream (`privacyops.{eventType}`)
+3. Workflow orchestration via Temporal (7 task queues)
+4. Composite risk scoring (5 dimensions, 0-100 scale)
+5. Immutable audit trail with SHA-256 chain integrity
+6. RBAC + ABAC + Approval workflows
+7. Data graph with BFS path finding (8 node types, 7 edge types)
+8. Connector SDK with plugin architecture (7 connectors)
 
 ---
 
-## MODULE 2: DISCOVERY ENGINE UPGRADE
+## MODULE 1: AI SECURITY CO-PILOT
 
-### Existing Implementation
-- `modules/discovery/discovery.service.ts` — 251 lines
-- Methods: `startScan`, `executeScan`, `findAllScans`, `findAllAssets`, `findAssetById`
-- Uses `ConnectorRegistry` to delegate discovery to connector implementations
-- `Asset` model captures: name, type, path, schema, size, rowCount, owner, tags
-- `ScanJob` model tracks scan status and stats
+### 1.1 Existing Implementation Review
+- `DataGraphService` provides node/edge CRUD, neighbor discovery, path finding, subgraph extraction
+- `DspmService` provides risk findings, risk trends, entity risk calculation
+- `LineageService` provides upstream/downstream tracing
+- `AiRecommendation` model exists with type/confidence/promptHash fields
+- `ANTHROPIC_API_KEY` already in environment config
+- No natural language query interface exists
 
-### Upgrade Architecture
-Extend discovery to support unstructured file storage, SaaS platforms, shadow dataset signals, AI dataset detection. Add richer metadata collection including permissions and activity.
+### 1.2 Upgrade Architecture
 
-### Schema Changes
 ```
-MODIFY MODEL: Asset
-  ADD FIELD: ownerEmail         VARCHAR(255)?
-  ADD FIELD: lastAccessedAt     TIMESTAMP?
-  ADD FIELD: lastModifiedBy     VARCHAR(255)?
-  ADD FIELD: accessPermissions  JSON?        // [{principal, type, permissions}]
-  ADD FIELD: activityMetadata   JSON?        // {readCount, writeCount, lastAccess}
-  ADD FIELD: storageLocation    VARCHAR(500)? // region/zone/cluster
-  ADD FIELD: encryptionStatus   VARCHAR(50)? // encrypted, unencrypted, unknown
-  ADD FIELD: isShadowData       BOOLEAN DEFAULT false
-  ADD FIELD: isAiDataset        BOOLEAN DEFAULT false
-  ADD FIELD: fingerprint        VARCHAR(128)? // Content hash for deduplication
-  ADD FIELD: discoverySource    VARCHAR(50)?  // connector, manual, inference
-
-MODIFY MODEL: ScanJob
-  ADD FIELD: scanScope    JSON?   // {includePatterns, excludePatterns, depth}
-  ADD FIELD: discoveryMode VARCHAR(50)? // full, incremental, targeted, shadow
+┌──────────────────────────────────────────────────────┐
+│                  AI Security Co-Pilot                 │
+│                                                       │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐ │
+│  │   Query      │  │   Intent     │  │  Security   │ │
+│  │ Interpreter  │→ │  Detector    │→ │  Guardrails │ │
+│  └─────────────┘  └──────────────┘  └─────────────┘ │
+│         │                                     │       │
+│  ┌──────▼──────┐  ┌──────────────┐  ┌────────▼────┐ │
+│  │ Graph Query │  │  Response    │  │  Context    │ │
+│  │  Planner    │→ │  Generator   │← │  Assembler  │ │
+│  └─────────────┘  └──────────────┘  └─────────────┘ │
+└──────────────────────────────────────────────────────┘
+         │                    │
+    ┌────▼────┐    ┌─────────▼─────────┐
+    │Existing │    │ Existing Services  │
+    │DataGraph│    │ DSPM, Lineage,     │
+    │Service  │    │ IdentityAccess,    │
+    │         │    │ AttackPaths, etc.  │
+    └─────────┘    └───────────────────┘
 ```
 
-### Services to Extend
-- `DiscoveryService` — Add `discoverShadowData()`, `discoverAiDatasets()`, `enrichAssetMetadata()`, `detectDuplicates()`
-- `ConnectorRegistry` — Add capability check for `supportsAccessAnalysis`
+**Components:**
 
-### APIs to Extend
-- `GET /discovery/assets` — Add filters: `isShadowData`, `isAiDataset`, `encryptionStatus`
-- `POST /discovery/scans` — Add `discoveryMode` and `scanScope` to StartScanDto
-- `GET /discovery/shadow-data` — New endpoint for shadow data summary
-- `GET /discovery/ai-datasets` — New endpoint for AI dataset inventory
+1. **CoPilotService** (new service in new `co-pilot` module)
+   - `processQuery(tenantId, userId, query: string): Promise<CoPilotResponse>`
+   - `getConversationHistory(tenantId, userId, sessionId)`
+   - `provideFeedback(tenantId, responseId, feedback)`
 
-### Files to Modify
-- `apps/api/src/modules/discovery/discovery.service.ts`
-- `apps/api/src/modules/discovery/discovery.controller.ts`
-- `apps/api/src/modules/discovery/dto/discovery.dto.ts`
-- `apps/api/prisma/schema.prisma`
+2. **QueryInterpreterService** (new, internal to co-pilot)
+   - Uses Claude API to parse natural language into structured intent
+   - Intent types: `risk_query`, `data_location`, `compliance_check`, `lineage_trace`, `access_audit`, `remediation_advice`, `attack_path`, `vendor_risk`, `general_summary`
+   - Output: `{ intent, entities[], filters, timeRange }`
 
-### New Files
-- `apps/api/src/modules/discovery/shadow-data.service.ts`
-- `apps/api/src/modules/discovery/ai-dataset.service.ts`
+3. **GraphQueryPlannerService** (new, internal to co-pilot)
+   - Translates intents into service calls against existing services
+   - Maps entity references to DataGraph node lookups
+   - Builds multi-step execution plans for complex queries
 
-### Migration Impact
-- Asset table gets ~10 new nullable columns — Backward compatible, no data migration
+4. **ContextAssemblerService** (new, internal to co-pilot)
+   - Gathers data from existing services based on query plan
+   - Calls: `DataGraphService.findNodes()`, `DspmService.getStats()`, `LineageService.getFullLineage()`, `IdentityAccessService.getAnomalies()`, `AttackPathsService.getAttackPaths()`, etc.
+   - Assembles structured context for LLM response generation
+
+5. **ResponseGeneratorService** (new, internal to co-pilot)
+   - Sends assembled context + user query to Claude API
+   - Applies security guardrails (no raw credentials, no PII in responses)
+   - Returns structured response with citations to platform data
+
+6. **SecurityGuardrailsService** (new, internal to co-pilot)
+   - Input sanitization (prompt injection prevention)
+   - Output filtering (strip sensitive data patterns)
+   - Permission-scoped responses (user only sees data they have access to)
+   - Rate limiting per user/tenant
+
+### 1.3 Schema Changes
+
+```prisma
+model CoPilotConversation {
+  id              String   @id @default(uuid())
+  tenantId        String
+  userId          String
+  sessionId       String
+  query           String
+  intent          String
+  queryPlan       Json
+  contextSummary  Json
+  response        String
+  responseTokens  Int
+  latencyMs       Int
+  feedback        String?  // thumbs_up, thumbs_down, null
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, userId])
+  @@index([tenantId, sessionId])
+  @@index([tenantId, intent])
+}
+```
+
+### 1.4 APIs
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/co-pilot/query` | `copilot:query` | Submit NL query |
+| GET | `/co-pilot/history` | `copilot:read` | Get conversation history |
+| POST | `/co-pilot/feedback/:id` | `copilot:query` | Submit feedback on response |
+| GET | `/co-pilot/suggestions` | `copilot:read` | Get contextual query suggestions |
+
+### 1.5 Services to Modify
+- None modified — all integration via existing service method calls
+
+### 1.6 New Services Required
+- `CoPilotModule` (new module)
+- `CoPilotService`, `QueryInterpreterService`, `GraphQueryPlannerService`, `ContextAssemblerService`, `ResponseGeneratorService`, `SecurityGuardrailsService`
+
+### 1.7 Migration Impact
+- Additive: 1 new table, 1 new module
+- No existing table changes
+- New permissions: `copilot:query`, `copilot:read`
+
+### 1.8 Compatibility Concerns
+- LLM API latency (2-10s) — must be async with streaming support
+- Token cost management — implement per-tenant usage limits
+- Claude API availability — graceful degradation with cached responses
+
+### 1.9 Risks & Assumptions
+- Assumes Claude API access is stable and performant
+- Prompt injection is a real attack vector — guardrails are critical
+- Context window limits may require summarization for large tenants
 
 ---
 
-## MODULE 3: CLASSIFICATION ENGINE UPGRADE
+## MODULE 2: AI RISK INTELLIGENCE ENGINE
 
-### Existing Implementation
-- `modules/classification/classification.service.ts` — 376 lines
-- `modules/classification/engine/classifier.ts` — 161 lines
-- Detection methods: regex, dictionary, context (keyword+regex boost)
-- Toxic combination detection for PII+PFI, PHI+identity, Aadhaar+PFI, Creds+PII
-- Labels model: category (pii/pfi/phi/sensitive/public), sensitivityLevel (1-5), detectionPatterns
+### 2.1 Existing Implementation Review
+- `DspmService.calculateEntityRisk()` computes composite risk across 5 dimensions
+- `RiskScorer` in `/dspm/engine/risk-scorer.ts` handles base scoring with sensitivity, exposure, access, volume
+- `EntityRiskProfile` model stores composite scores with breakdown
+- `DspmService.getRiskTrends()` provides basic historical trends
+- `ShadowDataAlert`, `AttackPath`, `IdentityAccessMapping` provide signal inputs
+- No predictive/ML-based risk analysis exists
 
-### Upgrade Architecture
-Extend classifier to detect credentials, biometrics, government identifiers, AI training datasets. Add ML-based classification, schema heuristic engine.
+### 2.2 Upgrade Architecture
 
-### Schema Changes
 ```
-MODIFY MODEL: ClassificationLabel
-  ADD FIELD: mlModelId       VARCHAR(100)?  // Reference to ML model for this label
-  ADD FIELD: schemaHeuristics JSON?         // {tableNamePatterns, columnNamePatterns, dataTypeHints}
-
-MODIFY MODEL: Classification
-  ADD FIELD: modelVersion    VARCHAR(50)?   // ML model version used
-  ADD FIELD: evidence        JSON?          // {sampleMatches, regexPattern, mlScore}
-
-NEW ENUM values for ClassificationCategory:
-  CREDENTIALS = 'credentials'
-  BIOMETRIC = 'biometric'
-  GOVERNMENT_ID = 'government_id'
-  AI_TRAINING = 'ai_training'
+┌───────────────────────────────────────────────────┐
+│           AI Risk Intelligence Engine              │
+│                                                    │
+│  ┌────────────┐  ┌──────────────┐  ┌───────────┐ │
+│  │  Signal     │  │   Risk       │  │  Anomaly  │ │
+│  │ Aggregator  │→ │  Predictor   │→ │  Detector │ │
+│  └────────────┘  └──────────────┘  └───────────┘ │
+│        │                │                  │      │
+│  ┌─────▼─────┐   ┌─────▼──────┐  ┌───────▼────┐ │
+│  │  Trend    │   │  Impact    │  │  Alert     │ │
+│  │ Analyzer  │   │  Assessor  │  │  Publisher │ │
+│  └───────────┘   └────────────┘  └────────────┘ │
+└───────────────────────────────────────────────────┘
+         ▲                ▲               │
+    ┌────┴────┐    ┌─────┴──────┐   ┌────▼────┐
+    │Existing │    │ Existing   │   │ NATS    │
+    │RiskScorer│   │ DataGraph  │   │EventBus │
+    │EntityRisk│   │ ShadowData │   └─────────┘
+    └─────────┘   │ AttackPaths│
+                  └────────────┘
 ```
 
-### Services to Extend
-- `Classifier` — Add `classifyBySchemaHeuristics()`, integrate ML model scoring via HTTP
-- `ClassificationService` — Add `bulkClassify()`, `getClassificationCoverage()`
+**Approach:** Extend `DspmService` with new methods and add `RiskIntelligenceService` as a companion service in the existing `dspm` module.
 
-### APIs to Extend
-- `POST /classification/bulk-classify` — Classify multiple assets in one call
-- `GET /classification/coverage` — Coverage stats (% assets classified)
-- `GET /classification/toxic-combinations` — List all toxic combinations across tenant
+### 2.3 Schema Changes
 
-### Files to Modify
-- `apps/api/src/modules/classification/engine/classifier.ts`
-- `apps/api/src/modules/classification/classification.service.ts`
-- `apps/api/src/modules/classification/classification.controller.ts`
-- `apps/api/src/modules/classification/dto/classification.dto.ts`
-- `packages/shared-types/src/enums.ts`
+```prisma
+model RiskPrediction {
+  id              String   @id @default(uuid())
+  tenantId        String
+  entityType      String   // asset, vendor, identity, ai_system
+  entityId        String
+  currentScore    Float
+  predictedScore  Float
+  predictedDate   DateTime
+  confidence      Float
+  drivers         Json     // [{ factor, weight, trend }]
+  status          String   @default("active") // active, expired, superseded
+  createdAt       DateTime @default(now())
 
-### New Files
-- `apps/api/src/modules/classification/engine/schema-heuristics.ts`
-- `apps/api/src/modules/classification/engine/ml-classifier.client.ts`
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
-### Migration Impact
-- 2 new nullable columns on existing tables — Backward compatible
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, status])
+}
+
+model RiskAnomaly {
+  id              String   @id @default(uuid())
+  tenantId        String
+  entityType      String
+  entityId        String
+  anomalyType     String   // score_spike, pattern_shift, new_exposure, access_surge
+  severity        String   // critical, high, medium, low
+  description     String
+  baselineValue   Float
+  observedValue   Float
+  deviation       Float
+  detectedAt      DateTime @default(now())
+  status          String   @default("open") // open, acknowledged, resolved, dismissed
+  resolvedAt      DateTime?
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([tenantId, entityType])
+}
+
+// ADD COLUMNS to existing EntityRiskProfile:
+// predictedScore     Float?
+// predictionDrivers  Json?
+// trendDirection     String?  // increasing, decreasing, stable
+// anomalyCount       Int      @default(0)
+```
+
+### 2.4 APIs
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/dspm/risk-intelligence/predictions` | `dspm:read` | Get risk predictions |
+| GET | `/dspm/risk-intelligence/predictions/:entityType/:entityId` | `dspm:read` | Get entity prediction |
+| POST | `/dspm/risk-intelligence/analyze` | `dspm:admin` | Trigger risk analysis |
+| GET | `/dspm/risk-intelligence/anomalies` | `dspm:read` | Get detected anomalies |
+| GET | `/dspm/risk-intelligence/trends` | `dspm:read` | Get risk trend analysis |
+| GET | `/dspm/risk-intelligence/impact/:entityId` | `dspm:read` | Business impact analysis |
+
+### 2.5 Services to Modify
+- `DspmService` — add `getRiskIntelligenceSummary()` method that delegates to new service
+- `RiskScorer` — add `getScoreHistory()` to expose historical score data for trend analysis
+
+### 2.6 New Services Required
+- `RiskIntelligenceService` (in existing `dspm` module)
+  - `generatePredictions(tenantId)` — analyze historical scores, compute predicted future scores
+  - `detectAnomalies(tenantId)` — compare current scores against statistical baselines
+  - `analyzeTrends(tenantId, entityType?, timeRange?)` — linear regression on score history
+  - `assessBusinessImpact(tenantId, entityId)` — compute downstream impact via DataGraph
+
+### 2.7 Migration Impact
+- 2 new tables, 4 new columns on `EntityRiskProfile`
+- No breaking changes to existing APIs
+
+### 2.8 Risks & Assumptions
+- Prediction accuracy depends on historical data volume (minimum 30 days recommended)
+- Statistical anomaly detection may produce false positives initially — needs tuning period
+- Trend analysis assumes regular risk recalculation cadence
 
 ---
 
-## MODULE 4: CONNECTOR SDK EXPANSION
+## MODULE 3: AUTONOMOUS REMEDIATION AGENT
 
-### Existing Implementation
-- `IConnector` interface with 7 methods (initialize, test, disconnect, listAssets, getSchema, sampleContent, getAccessPolicies)
-- `ConnectorRegistry` with factory pattern
-- 2 implementations: `AwsS3Connector` (211 lines), `PostgresConnector` (227 lines)
-- `ConnectorConfig`, `ConnectorCapabilities`, `ConnectorMetadata` types
-- 18 `DataSourceType` values defined
+### 3.1 Existing Implementation Review
+- `RemediationService` provides full lifecycle: propose → approve → execute → rollback
+- `RemediationExecutorService` handles 8 action types with rollback state capture
+- `WorkflowService` supports `startRemediationWorkflow()`
+- `ApprovalGuard` and `ApprovalRequest` model enforce approval gates
+- No AI-driven remediation planning exists — all proposals are manual
 
-### Upgrade Architecture
-Add base connector class with auth, retry, rate limiting, pagination. Implement connectors for top-priority categories.
+### 3.2 Upgrade Architecture
 
-### Schema Changes
 ```
-MODIFY MODEL: DataSource
-  ADD FIELD: rateLimitConfig  JSON?  // {maxRequestsPerSecond, burstLimit}
-  ADD FIELD: retryConfig      JSON?  // {maxRetries, backoffMs}
-  ADD FIELD: lastHealthCheck  TIMESTAMP?
-  ADD FIELD: healthStatus     VARCHAR(50)?  // healthy, degraded, unhealthy
+┌────────────────────────────────────────────────────┐
+│          Autonomous Remediation Agent               │
+│                                                     │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐│
+│  │  Finding     │  │  Remediation │  │  Safety    ││
+│  │  Analyzer    │→ │  Planner     │→ │  Validator ││
+│  └─────────────┘  └──────────────┘  └────────────┘│
+│        │                │                  │       │
+│  ┌─────▼─────┐   ┌─────▼──────┐  ┌───────▼─────┐ │
+│  │  Context  │   │  Plan      │  │  Execution  │ │
+│  │ Enricher  │   │  Optimizer │  │  Orchestrator│ │
+│  └───────────┘   └────────────┘  └─────────────┘ │
+└────────────────────────────────────────────────────┘
+         │                │               │
+    ┌────▼────┐    ┌─────▼──────┐   ┌────▼──────┐
+    │Existing │    │ Existing   │   │ Existing  │
+    │Remediation│  │ Workflow   │   │ Approval  │
+    │Service  │    │ Service    │   │ Guard     │
+    └─────────┘    └────────────┘   └───────────┘
 ```
 
-### New Files — Connector SDK
-- `apps/api/src/modules/connectors/sdk/base-connector.ts` — Abstract class with retry, rate-limit, pagination, error handling, schema normalization
-- `apps/api/src/modules/connectors/sdk/auth/oauth2.auth.ts`
-- `apps/api/src/modules/connectors/sdk/auth/api-key.auth.ts`
-- `apps/api/src/modules/connectors/sdk/auth/iam-role.auth.ts`
+**Approach:** Add `RemediationAgentService` to the existing `remediation` module.
 
-### New Files — Connector Implementations (Priority Order)
-**Phase 1 (Cloud Storage):**
-- `implementations/azure-blob.connector.ts`
-- `implementations/gcp-storage.connector.ts`
+### 3.3 Schema Changes
 
-**Phase 2 (Databases):**
-- `implementations/mysql.connector.ts`
-- `implementations/mongodb.connector.ts`
-- `implementations/snowflake.connector.ts`
+```prisma
+model RemediationPlan {
+  id              String   @id @default(uuid())
+  tenantId        String
+  findingId       String
+  planType        String   // auto_generated, ai_suggested, manual
+  steps           Json     // [{ order, actionType, target, params, risk, rollbackPlan }]
+  riskAssessment  Json     // { overallRisk, sideEffects[], dependencies[] }
+  estimatedImpact Json     // { assetsAffected, usersAffected, downtime }
+  confidence      Float
+  status          String   @default("proposed") // proposed, approved, executing, completed, failed, rejected
+  approvedBy      String?
+  approvedAt      DateTime?
+  executionLog    Json?
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
 
-**Phase 3 (SaaS):**
-- `implementations/salesforce.connector.ts`
-- `implementations/google-drive.connector.ts`
-- `implementations/onedrive.connector.ts`
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
-**Phase 4 (DevOps/Identity):**
-- `implementations/github.connector.ts`
-- `implementations/okta.connector.ts`
+  @@index([tenantId, findingId])
+  @@index([tenantId, status])
+}
 
-### Services to Extend
-- `ConnectorRegistry` — Auto-register all implementations
-- `ConnectorsService` — Add health check scheduling, batch test
+// ADD COLUMNS to existing RemediationAction:
+// planId          String?   // link to RemediationPlan
+// aiGenerated     Boolean   @default(false)
+// safetyScore     Float?    // 0-1, how safe the action is
+```
 
-### APIs to Extend
-- `POST /connectors/:id/health` — Trigger health check
-- `GET /connectors/health` — Health summary of all connectors
+### 3.4 APIs
 
-### Files to Modify
-- `apps/api/src/modules/connectors/connector-registry.ts`
-- `apps/api/src/modules/connectors/connectors.service.ts`
-- `apps/api/src/modules/connectors/connectors.controller.ts`
-- `apps/api/src/modules/connectors/interfaces/connector.interface.ts`
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/remediation/agent/analyze/:findingId` | `remediation:admin` | Generate AI remediation plan |
+| GET | `/remediation/agent/plans` | `remediation:read` | List AI-generated plans |
+| GET | `/remediation/agent/plans/:id` | `remediation:read` | Get plan details |
+| POST | `/remediation/agent/plans/:id/approve` | `remediation:admin` | Approve AI plan |
+| POST | `/remediation/agent/plans/:id/execute` | `remediation:admin` | Execute approved plan |
+| POST | `/remediation/agent/bulk-analyze` | `remediation:admin` | Analyze multiple findings |
 
-### Migration Impact
-- 4 new nullable columns on `data_sources` — Backward compatible
+### 3.5 Services to Modify
+- `RemediationService` — add `getActionsByPlan(planId)` method
+- Subscribe to `finding.created` events to trigger auto-analysis for critical/high findings
+
+### 3.6 New Services Required
+- `RemediationAgentService` (in existing `remediation` module)
+  - `analyzeFinding(tenantId, findingId)` — gather context, generate plan via LLM
+  - `validatePlanSafety(plan)` — assess blast radius, reversibility, dependencies
+  - `executePlan(tenantId, planId)` — orchestrate multi-step execution via existing RemediationService
+  - `bulkAnalyze(tenantId, findingIds[])` — batch analysis
+
+### 3.7 Migration Impact
+- 1 new table, 3 new columns on `RemediationAction`
+- Event listener for `finding.created` — additive
+
+### 3.8 Risks & Assumptions
+- Auto-execution carries inherent risk — always require approval for destructive actions
+- Safety validator must be conservative
+- Plans may become stale if findings change between generation and approval
 
 ---
 
-## MODULE 5: DSPM DATA GRAPH
+## MODULE 4: AI ATTACK SIMULATION ENGINE
 
-### Existing Implementation
-- No graph model exists
-- `DspmService.getDataMap()` returns a flat JSON structure of assets + sources
-- Relationships are implicit through FK references (Asset→DataSource, Classification→Asset)
+### 4.1 Existing Implementation Review
+- `AttackPathAnalyzer` identifies exposure chains via identity access + data lineage
+- Scoring: public access (+40), excessive access (+25), target severity (+10-50)
+- `DataGraphService.findPaths()` provides BFS path finding
+- `IdentityAccessService` maps identities to data assets
+- Current analysis is static — no simulation of attacker behavior
 
-### Upgrade Architecture
-Introduce a data graph model stored in PostgreSQL (not a separate graph DB) using a nodes/edges pattern. The graph connects assets, datasets, columns, identities, vendors, AI systems, processing activities, and retention policies.
+### 4.2 Upgrade Architecture
 
-### Schema Changes
 ```
-NEW MODEL: DataGraphNode
-  id           UUID PK
-  tenantId     UUID
-  nodeType     VARCHAR(50)  // asset, dataset, column, identity, vendor, ai_system, processing_activity, retention_policy
-  entityId     UUID         // FK to the actual entity
-  label        VARCHAR(500)
-  metadata     JSON?
-  createdAt    TIMESTAMP
-  updatedAt    TIMESTAMP
-
-  @@unique([tenantId, nodeType, entityId])
-  @@index([tenantId, nodeType])
-
-NEW MODEL: DataGraphEdge
-  id               UUID PK
-  tenantId         UUID
-  sourceNodeId     UUID FK → DataGraphNode
-  targetNodeId     UUID FK → DataGraphNode
-  relationshipType VARCHAR(50) // CONTAINS, STORED_IN, ACCESSIBLE_BY, OWNED_BY, SHARED_WITH, USED_BY_AI, GOVERNED_BY
-  metadata         JSON?
-  confidence       DECIMAL(3,2)?
-  discoveredAt     TIMESTAMP
-  createdAt        TIMESTAMP
-
-  @@index([tenantId])
-  @@index([sourceNodeId])
-  @@index([targetNodeId])
-  @@index([relationshipType])
+┌──────────────────────────────────────────────────────┐
+│            AI Attack Simulation Engine                 │
+│                                                       │
+│  ┌──────────────┐  ┌───────────────┐  ┌────────────┐│
+│  │  Scenario    │  │  Simulation   │  │  Path      ││
+│  │  Generator   │→ │  Engine       │→ │  Scorer    ││
+│  └──────────────┘  └───────────────┘  └────────────┘│
+│         │                │                  │        │
+│  ┌──────▼──────┐  ┌─────▼──────┐  ┌───────▼──────┐ │
+│  │  Identity   │  │ Privilege  │  │  Report      │ │
+│  │ Compromise  │  │ Escalation │  │  Generator   │ │
+│  │  Modeler    │  │  Simulator │  │              │ │
+│  └─────────────┘  └────────────┘  └──────────────┘ │
+└──────────────────────────────────────────────────────┘
+         ▲                ▲
+    ┌────┴────┐    ┌─────┴──────┐
+    │Existing │    │ Existing   │
+    │AttackPath│   │ DataGraph  │
+    │Analyzer │    │ Identity   │
+    │         │    │ Access     │
+    └─────────┘    └────────────┘
 ```
 
-### New Services
-- `DataGraphService` — CRUD for nodes/edges, traversal queries, path finding
-- `DataGraphSyncService` — Syncs entities from existing models into graph nodes/edges
+**Approach:** Add `AttackSimulationService` to the existing `attack-paths` module.
 
-### APIs
-- `GET /data-graph/nodes` — Query nodes by type, label search
-- `GET /data-graph/nodes/:id/neighbors` — Get connected nodes (1 hop)
-- `GET /data-graph/paths` — Find paths between two nodes
-- `GET /data-graph/subgraph` — Get subgraph for an entity
-- `POST /data-graph/sync` — Trigger full graph sync from existing data
+### 4.3 Schema Changes
 
-### New Files
-- `apps/api/src/modules/data-graph/data-graph.module.ts`
-- `apps/api/src/modules/data-graph/data-graph.service.ts`
-- `apps/api/src/modules/data-graph/data-graph-sync.service.ts`
-- `apps/api/src/modules/data-graph/data-graph.controller.ts`
-- `apps/api/src/modules/data-graph/dto/data-graph.dto.ts`
+```prisma
+model AttackSimulation {
+  id              String   @id @default(uuid())
+  tenantId        String
+  scenarioType    String   // identity_compromise, privilege_escalation, data_exfiltration, lateral_movement
+  scenarioConfig  Json     // { entryPoint, targetAssets[], assumedCompromise }
+  status          String   @default("pending") // pending, running, completed, failed
+  results         Json?    // { pathsDiscovered, criticalPaths[], riskScore, recommendations[] }
+  pathsFound      Int      @default(0)
+  maxRiskScore    Float    @default(0)
+  executionTimeMs Int?
+  scheduledBy     String
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
 
-### Files to Modify
-- `apps/api/src/app.module.ts` — Register DataGraphModule
-- `apps/api/prisma/schema.prisma`
-- `packages/shared-types/src/enums.ts`
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
-### Migration Impact
-- 2 new tables — No impact on existing data
-- Graph sync will populate from existing assets, users, vendors
+  @@index([tenantId, status])
+  @@index([tenantId, scenarioType])
+}
+
+model SimulatedAttackPath {
+  id              String   @id @default(uuid())
+  tenantId        String
+  simulationId    String
+  entryPoint      Json     // { type, entityId, description }
+  pathSteps       Json     // [{ step, action, fromEntity, toEntity, technique, probability }]
+  targetAsset     Json     // { assetId, sensitivity, dataCategories }
+  riskScore       Float
+  exploitability  String   // easy, moderate, difficult
+  impact          String   // critical, high, medium, low
+  mitigations     Json     // [{ action, priority, effort }]
+  createdAt       DateTime @default(now())
+
+  simulation      AttackSimulation @relation(fields: [simulationId], references: [id])
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, simulationId])
+  @@index([tenantId, riskScore])
+}
+```
+
+### 4.4 APIs
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/attack-paths/simulations` | `attack-paths:admin` | Create and run simulation |
+| GET | `/attack-paths/simulations` | `attack-paths:read` | List simulations |
+| GET | `/attack-paths/simulations/:id` | `attack-paths:read` | Get simulation results |
+| GET | `/attack-paths/simulations/:id/paths` | `attack-paths:read` | Get discovered paths |
+| POST | `/attack-paths/simulations/identity-compromise` | `attack-paths:admin` | Simulate identity compromise |
+| POST | `/attack-paths/simulations/data-exfiltration` | `attack-paths:admin` | Simulate exfiltration |
+
+### 4.5 Services to Modify
+- `AttackPathsService` — add `getSimulations()` and `getSimulationById()` delegation methods
+
+### 4.6 New Services Required
+- `AttackSimulationService` (in existing `attack-paths` module)
+  - `runSimulation(tenantId, scenario)` — orchestrate full simulation
+  - `simulateIdentityCompromise(tenantId, identityId)` — what-if identity compromise
+  - `simulateDataExfiltration(tenantId, assetId)` — reverse trace all access paths
+  - `simulatePrivilegeEscalation(tenantId, identityId)` — find escalation chains
+  - `generateMitigations(paths[])` — use LLM to suggest mitigations per path
+
+### 4.7 Migration Impact
+- 2 new tables, no existing table changes
+
+### 4.8 Risks & Assumptions
+- Simulations on large graphs may be expensive — implement depth limits
+- Results should be clearly labeled as simulated, not actual breaches
 
 ---
 
-## MODULE 6: RISK SCORING ENGINE UPGRADE
+## MODULE 5: DATA EXPOSURE THREAT HUNTING ENGINE
 
-### Existing Implementation
-- `modules/dspm/engine/risk-scorer.ts` — 129 lines
-- Inputs: sensitivityLevel, publicAccess, crossAccountAccess, principalCount, encryption, MFA, rowCount, stale, retentionPolicy
-- Formula: `Sensitivity × Exposure × Access × Volume`
-- Output: score (0-100), severity, breakdown, factors
+### 5.1 Existing Implementation Review
+- `IdentityAccessService` detects excessive/inactive access and public sharing
+- `ShadowDataService` detects unmanaged/duplicate/orphaned data
+- `AttackPathAnalyzer` links exposure to sensitive assets
+- `BreachDetectionRule` model exists for large export/unauthorized access rules
+- No continuous behavioral anomaly detection exists
 
-### Upgrade Architecture
-Extend with vendor exposure, AI usage, identity access breadth, retention violations, security misconfiguration scoring. Add composite risk for multi-asset entities.
+### 5.2 Upgrade Architecture
 
-### Schema Changes
 ```
-MODIFY MODEL: RiskFinding
-  ADD FIELD: riskBreakdown     JSON?  // Full scoring breakdown
-  ADD FIELD: linkedGraphNodeId UUID?  // Link to data graph node
-  ADD FIELD: autoRemediation   JSON?  // Suggested remediation actions
+┌──────────────────────────────────────────────────────┐
+│         Data Exposure Threat Hunting Engine            │
+│                                                       │
+│  ┌──────────────┐  ┌───────────────┐  ┌────────────┐│
+│  │  Access      │  │  Export       │  │  Credential││
+│  │  Pattern     │  │  Monitor     │  │  Misuse    ││
+│  │  Analyzer    │  │              │  │  Detector  ││
+│  └──────────────┘  └───────────────┘  └────────────┘│
+│         │                │                  │        │
+│  ┌──────▼──────┐  ┌─────▼──────┐  ┌───────▼──────┐ │
+│  │  Shadow AI  │  │  Hunting   │  │  Alert       │ │
+│  │  Usage      │  │  Query     │  │  Correlator  │ │
+│  │  Detector   │  │  Engine    │  │              │ │
+│  └─────────────┘  └────────────┘  └──────────────┘ │
+└──────────────────────────────────────────────────────┘
+         ▲                ▲               │
+    ┌────┴────┐    ┌─────┴──────┐   ┌────▼────┐
+    │Existing │    │ Existing   │   │ NATS    │
+    │Identity │    │ Shadow     │   │EventBus │
+    │Access   │    │ Data       │   └─────────┘
+    │Service  │    │ Service    │
+    └─────────┘    └────────────┘
+```
 
-NEW MODEL: EntityRiskProfile
-  id           UUID PK
-  tenantId     UUID
-  entityType   VARCHAR(50)  // asset, vendor, identity, ai_system
-  entityId     UUID
-  compositeScore  DECIMAL(5,2)
-  scoreBreakdown  JSON
-  riskFactors     JSON
-  lastCalculated  TIMESTAMP
-  trend           VARCHAR(20)  // increasing, stable, decreasing
-  createdAt    TIMESTAMP
-  updatedAt    TIMESTAMP
+**Approach:** New `threat-hunting` module that consumes data from existing services and adds behavioral analysis.
+
+### 5.3 Schema Changes
+
+```prisma
+model ThreatHunt {
+  id              String   @id @default(uuid())
+  tenantId        String
+  huntType        String   // abnormal_access, suspicious_export, credential_misuse, shadow_ai, data_hoarding
+  status          String   @default("active") // active, completed, archived
+  query           Json     // hunt parameters
+  findings        Json?    // [{ type, entity, evidence, severity, confidence }]
+  findingsCount   Int      @default(0)
+  scheduledBy     String?  // null = system-initiated
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, huntType])
+  @@index([tenantId, status])
+}
+
+model ThreatIndicator {
+  id              String   @id @default(uuid())
+  tenantId        String
+  indicatorType   String   // access_anomaly, export_spike, credential_abuse, shadow_ai_usage, permission_escalation
+  entityType      String   // identity, asset, vendor
+  entityId        String
+  severity        String   // critical, high, medium, low
+  confidence      Float
+  evidence        Json     // { baseline, observed, deviation, samples[] }
+  status          String   @default("open") // open, investigating, confirmed, false_positive, resolved
+  correlatedWith  String[] // other indicator IDs
+  detectedAt      DateTime @default(now())
+  resolvedAt      DateTime?
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, severity])
+  @@index([tenantId, entityType, entityId])
+}
+
+model AccessBaseline {
+  id              String   @id @default(uuid())
+  tenantId        String
+  entityType      String   // identity, asset
+  entityId        String
+  baselineData    Json     // { avgDailyAccess, peakAccess, typicalHours, typicalSources }
+  calculatedAt    DateTime @default(now())
+  validUntil      DateTime
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, entityType, entityId])
+}
 ```
 
-### Services to Extend
-- `RiskScorer` — Add `vendorExposureScore()`, `aiUsageScore()`, `identityAccessScore()`, `retentionViolationScore()`, `securityMisconfigScore()`
-- `DspmService` — Add `calculateEntityRisk()`, `getRiskTrends()`
+### 5.4 APIs
 
-### APIs to Extend
-- `GET /dspm/risk-profiles` — Entity-level risk profiles
-- `GET /dspm/risk-trends` — Risk score trends over time
-- `POST /dspm/risk/recalculate-all` — Bulk recalculation
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/threat-hunting/hunts` | `threat-hunting:admin` | Start a threat hunt |
+| GET | `/threat-hunting/hunts` | `threat-hunting:read` | List hunts |
+| GET | `/threat-hunting/hunts/:id` | `threat-hunting:read` | Get hunt results |
+| GET | `/threat-hunting/indicators` | `threat-hunting:read` | List threat indicators |
+| PATCH | `/threat-hunting/indicators/:id` | `threat-hunting:admin` | Update indicator status |
+| POST | `/threat-hunting/detect` | `threat-hunting:admin` | Run full detection cycle |
+| GET | `/threat-hunting/baselines` | `threat-hunting:read` | View access baselines |
 
-### Files to Modify
-- `apps/api/src/modules/dspm/engine/risk-scorer.ts`
-- `apps/api/src/modules/dspm/dspm.service.ts`
-- `apps/api/src/modules/dspm/dspm.controller.ts`
-- `apps/api/prisma/schema.prisma`
+### 5.5 Services to Modify
+- None — reads from existing services via dependency injection
 
-### Migration Impact
-- 2 new nullable columns on `risk_findings` — Backward compatible
-- 1 new table `entity_risk_profiles`
+### 5.6 New Services Required
+- `ThreatHuntingModule` (new module)
+- `ThreatHuntingService` — orchestrates hunts, manages lifecycle
+- `AccessPatternAnalyzer` — detects abnormal access using baselines
+- `ExportMonitorService` — detects suspicious data exports
+- `ShadowAiDetector` — identifies unauthorized AI usage of enterprise data
+- `AlertCorrelator` — links related indicators into incident candidates
+
+### 5.7 Migration Impact
+- 3 new tables, 1 new module
+- Consumes events: `finding.created`, `risk.score.changed`, `remediation.proposed`
+
+### 5.8 Risks & Assumptions
+- Baseline calculation requires historical data — cold start period needed
+- False positive rate may be high initially — needs tuning mechanism
 
 ---
 
-## MODULE 7: AUTOMATED REMEDIATION ENGINE
+## MODULE 6: AI GOVERNANCE INTELLIGENCE
 
-### Existing Implementation
-- No remediation engine exists
-- `ApprovalRequest` model exists for gated operations
-- `ApprovalService` exists in `core/auth/services/approval.service.ts`
-- Workflow engine supports approval workflows
+### 6.1 Existing Implementation Review
+- `AiGovernanceService` already exists with 7 methods: CRUD for AI systems, dataset usage tracking, compliance reporting
+- `AiSystem` model tracks risk categories (unacceptable/high/limited/minimal)
+- `AiDatasetUsage` tracks training/validation/inference/fine-tuning usage
+- `AiRecommendation` model stores AI-generated insights
+- `DataGraphEdge` already supports `USED_BY_AI` relationship type
+- Missing: lineage tracking for AI models, automated risk classification, regulatory mapping
 
-### Upgrade Architecture
-Create a remediation engine that defines, executes, and tracks remediation actions with approval workflows, rollback support, and audit evidence.
+### 6.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** Extend existing `ai-governance` module with new methods and a companion intelligence service.
+
+### 6.3 Schema Changes
+
+```prisma
+model AiModelLineage {
+  id              String   @id @default(uuid())
+  tenantId        String
+  aiSystemId      String
+  version         String
+  parentModelId   String?  // for fine-tuned models
+  trainingDatasets Json     // [{ datasetId, assetId, recordCount, dateRange }]
+  trainingConfig  Json?    // hyperparameters, training methodology
+  evaluationMetrics Json?  // accuracy, bias metrics, fairness scores
+  deploymentStatus String  @default("development") // development, staging, production, deprecated, retired
+  deployedAt      DateTime?
+  retiredAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  aiSystem        AiSystem @relation(fields: [aiSystemId], references: [id])
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, aiSystemId])
+  @@index([tenantId, deploymentStatus])
+}
+
+model AiRiskAssessment {
+  id                String   @id @default(uuid())
+  tenantId          String
+  aiSystemId        String
+  assessmentType    String   // automated, manual, regulatory
+  riskCategory      String   // unacceptable, high, limited, minimal
+  riskFactors       Json     // [{ factor, score, evidence }]
+  regulatoryMapping Json     // { euAiAct: "high-risk", gdpr: "automated-decision" }
+  dataProtectionImpact Json  // { piiExposure, consentCoverage, retentionCompliance }
+  overallScore      Float
+  recommendations   Json     // [{ action, priority, rationale }]
+  assessedAt        DateTime @default(now())
+  nextReviewDate    DateTime?
+
+  aiSystem          AiSystem @relation(fields: [aiSystemId], references: [id])
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, aiSystemId])
+  @@index([tenantId, riskCategory])
+}
+
+// ADD COLUMNS to existing AiSystem:
+// lineageTracked    Boolean  @default(false)
+// lastRiskAssessment DateTime?
+// regulatoryStatus  String?  // compliant, non_compliant, under_review, exempt
 ```
-NEW MODEL: RemediationAction
-  id              UUID PK
-  tenantId        UUID
-  findingId       UUID FK → RiskFinding
-  actionType      VARCHAR(50)  // remove_public_access, revoke_permissions, apply_retention, quarantine, trigger_review
-  status          VARCHAR(50)  // proposed, pending_approval, approved, executing, completed, failed, rolled_back
-  approvalId      UUID? FK → ApprovalRequest
-  executedBy      UUID?
-  executedAt      TIMESTAMP?
-  rollbackData    JSON?        // State before remediation for rollback
-  result          JSON?        // Execution result
-  validationResult JSON?       // Post-execution validation
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
 
-  @@index([tenantId])
-  @@index([findingId])
-  @@index([status])
-```
+### 6.4 APIs
 
-### New Services
-- `RemediationService` — Propose, approve, execute, validate, rollback
-- `RemediationExecutor` — Connector-aware execution (calls connectors to apply changes)
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/ai-governance/systems/:id/lineage` | `ai-governance:admin` | Record model lineage |
+| GET | `/ai-governance/systems/:id/lineage` | `ai-governance:read` | Get model lineage |
+| POST | `/ai-governance/systems/:id/risk-assessment` | `ai-governance:admin` | Run AI risk assessment |
+| GET | `/ai-governance/risk-assessments` | `ai-governance:read` | List all risk assessments |
+| GET | `/ai-governance/regulatory-map` | `ai-governance:read` | Cross-regulation AI mapping |
+| GET | `/ai-governance/sensitive-data-usage` | `ai-governance:read` | Audit sensitive data in AI |
 
-### APIs
-- `POST /remediation/propose` — Propose action for a finding
-- `POST /remediation/:id/approve` — Approve action
-- `POST /remediation/:id/execute` — Execute action
-- `POST /remediation/:id/rollback` — Rollback action
-- `GET /remediation` — List actions with filters
-- `GET /remediation/:id` — Get action details with audit trail
+### 6.5 Services to Modify
+- `AiGovernanceService` — add `getModelLineage()`, `runRiskAssessment()`, `getSensitiveDataUsage()`, `getRegulatoryMap()`
 
-### New Files
-- `apps/api/src/modules/remediation/remediation.module.ts`
-- `apps/api/src/modules/remediation/remediation.service.ts`
-- `apps/api/src/modules/remediation/remediation-executor.service.ts`
-- `apps/api/src/modules/remediation/remediation.controller.ts`
-- `apps/api/src/modules/remediation/dto/remediation.dto.ts`
+### 6.6 New Services Required
+- `AiRiskClassifier` (in existing `ai-governance` module) — automated risk classification
+- `AiLineageTracker` (in existing `ai-governance` module) — tracks model versioning and provenance
 
-### Files to Modify
-- `apps/api/src/app.module.ts`
-- `apps/api/prisma/schema.prisma`
-- `packages/shared-types/src/events.ts` — Add remediation events
+### 6.7 Migration Impact
+- 2 new tables, 3 new columns on `AiSystem`
+- Extends existing module — no new module registration needed
 
-### Migration Impact
-- 1 new table — No impact on existing data
+### 6.8 Risks & Assumptions
+- EU AI Act classification criteria may evolve — must be configurable
+- Model lineage depends on manual or connector-based input
 
 ---
 
-## MODULE 8: IDENTITY-TO-DATA ACCESS INTELLIGENCE
+## MODULE 7: PREDICTIVE DATA RISK ENGINE
 
-### Existing Implementation
-- `User` model with roles and permissions
-- `AccessPolicy` interface in connector (principal, principalType, permissions)
-- No identity-to-data access mapping stored
+### 7.1 Existing Implementation Review
+- `DspmService.getRiskTrends()` provides basic historical analysis
+- `EntityRiskProfile` stores point-in-time composite scores
+- `ShadowDataAlert` tracks growth of unmanaged data
+- `VendorAssessment` captures vendor risk snapshots
+- No forecasting or predictive analytics exist
 
-### Upgrade Architecture
-Map identities (users, service accounts, vendors) to the datasets they can access. Detect anomalies like inactive users with access, excessive permissions, vendor access, service account abuse, public sharing.
+### 7.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** Add `PredictiveRiskService` to the existing `dspm` module. Closely related to Module 2 and shares infrastructure.
+
+### 7.3 Schema Changes
+
+```prisma
+model RiskForecast {
+  id              String   @id @default(uuid())
+  tenantId        String
+  forecastType    String   // shadow_data_growth, vendor_exposure, access_risk, governance_gap
+  timeHorizon     String   // 30d, 60d, 90d
+  currentValue    Float
+  forecastedValue Float
+  confidence      Float
+  trend           String   // accelerating, linear, decelerating, stable
+  riskFactors     Json     // [{ name, contribution, trend }]
+  recommendations Json     // [{ action, impact, urgency }]
+  generatedAt     DateTime @default(now())
+  expiresAt       DateTime
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, forecastType])
+  @@index([tenantId, expiresAt])
+}
 ```
-NEW MODEL: IdentityAccessMapping
-  id              UUID PK
-  tenantId        UUID
-  identityType    VARCHAR(50)  // user, service_account, vendor, group, public
-  identityId      VARCHAR(500) // External identity reference
-  identityName    VARCHAR(500)
-  assetId         UUID FK → Asset
-  permissionLevel VARCHAR(50)  // read, write, admin, owner
-  accessSource    VARCHAR(100) // iam_policy, bucket_acl, db_grant, share_link
-  isExcessive     BOOLEAN DEFAULT false
-  isInactive      BOOLEAN DEFAULT false  // Identity hasn't accessed data in 90+ days
-  lastAccessedAt  TIMESTAMP?
-  discoveredAt    TIMESTAMP
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
 
-  @@index([tenantId])
-  @@index([assetId])
-  @@index([identityType])
-  @@index([isExcessive])
-  @@index([isInactive])
-```
+### 7.4 APIs
 
-### New Services
-- `IdentityAccessService` — Build identity→data mappings, detect anomalies
-- `AccessAnalyzer` — Analyze excessive permissions, inactive access, public sharing
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/dspm/predictive/forecasts` | `dspm:read` | Get all risk forecasts |
+| POST | `/dspm/predictive/generate` | `dspm:admin` | Generate new forecasts |
+| GET | `/dspm/predictive/shadow-data-growth` | `dspm:read` | Shadow data growth forecast |
+| GET | `/dspm/predictive/vendor-exposure` | `dspm:read` | Vendor exposure forecast |
+| GET | `/dspm/predictive/governance-gaps` | `dspm:read` | Governance gap predictions |
 
-### APIs
-- `GET /identity-access/mappings` — List identity-to-data mappings
-- `GET /identity-access/anomalies` — List detected access anomalies
-- `GET /identity-access/identities/:id/data-access` — What data can this identity access?
-- `GET /identity-access/assets/:id/identities` — Who can access this asset?
-- `GET /identity-access/stats` — Access intelligence summary
+### 7.5 Services to Modify
+- `DspmService` — add `getPredictiveSummary()` delegation method
 
-### New Files
-- `apps/api/src/modules/identity-access/identity-access.module.ts`
-- `apps/api/src/modules/identity-access/identity-access.service.ts`
-- `apps/api/src/modules/identity-access/access-analyzer.ts`
-- `apps/api/src/modules/identity-access/identity-access.controller.ts`
-- `apps/api/src/modules/identity-access/dto/identity-access.dto.ts`
+### 7.6 New Services Required
+- `PredictiveRiskService` (in existing `dspm` module)
+  - `generateForecasts(tenantId)` — run all prediction models
+  - `forecastShadowDataGrowth(tenantId)` — trend shadow data alerts
+  - `forecastVendorExposure(tenantId)` — trend vendor risk scores
+  - `forecastAccessRisk(tenantId)` — trend excessive/inactive access
+  - `forecastGovernanceGaps(tenantId)` — predict uncovered datasets
 
-### Files to Modify
-- `apps/api/src/app.module.ts`
-- `apps/api/prisma/schema.prisma`
+### 7.7 Migration Impact
+- 1 new table, no existing table changes
 
-### Migration Impact
-- 1 new table — No impact on existing data
+### 7.8 Risks & Assumptions
+- Requires minimum 30-60 days of historical data for meaningful forecasts
+- Predictions are statistical extrapolations — must be clearly labeled
 
 ---
 
-## MODULE 9: SHADOW DATA DETECTION
+## MODULE 8: SECURITY KNOWLEDGE GRAPH EXPANSION
 
-### Existing Implementation
-- `Asset` model with discovery metadata
-- No shadow data detection logic
-- No fingerprinting or duplicate detection
+### 8.1 Existing Implementation Review
+- `DataGraphService` manages nodes and edges with BFS path finding
+- Node types: asset, dataset, column, identity, vendor, ai_system, processing_activity, retention_policy
+- Edge types: CONTAINS, STORED_IN, ACCESSIBLE_BY, OWNED_BY, SHARED_WITH, USED_BY_AI, GOVERNED_BY
+- `DataGraphNode` has metadata JSON for extensibility
+- `DataGraphEdge` has confidence scoring
+- Missing: attack vector nodes, risk signal nodes, temporal edges, graph analytics
 
-### Upgrade Architecture
-Detect duplicate sensitive datasets, orphaned files, stale exports, shadow SaaS storage, backup copies, AI sandbox datasets. Uses signals from discovery, classification, data graph, and content fingerprinting.
+### 8.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** Extend the existing `data-graph` module with new node types, edge types, and analytics.
+
+### 8.3 Schema Changes
+
+```prisma
+// NEW node types (string enum, no migration needed):
+// "attack_vector", "risk_signal", "control", "regulation",
+// "incident", "threat_indicator", "data_flow"
+
+// NEW edge types (string enum, no migration needed):
+// "DERIVED_FROM", "EXPOSED_TO", "CONTROLLED_BY_POLICY",
+// "MITIGATED_BY", "TRIGGERED_BY", "FLOWS_TO", "IMPACTS"
+
+model GraphAnalyticsResult {
+  id              String   @id @default(uuid())
+  tenantId        String
+  analysisType    String   // centrality, clustering, risk_propagation, impact_radius
+  parameters      Json
+  results         Json
+  nodeCount       Int
+  edgeCount       Int
+  computedAt      DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, analysisType])
+}
 ```
-Uses Asset model (extended in Module 2):
-  - isShadowData
-  - fingerprint
-  - discoverySource
 
-NEW MODEL: ShadowDataAlert
-  id              UUID PK
-  tenantId        UUID
-  alertType       VARCHAR(50)  // duplicate, orphaned, stale_export, shadow_saas, backup_copy, ai_sandbox
-  assetId         UUID FK → Asset
-  relatedAssetId  UUID?        // For duplicates, the original asset
-  severity        VARCHAR(20)
-  description     TEXT
-  evidence        JSON
-  status          VARCHAR(50)  // open, investigating, resolved, false_positive
-  resolvedAt      TIMESTAMP?
-  resolvedBy      UUID?
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
+### 8.4 APIs
 
-  @@index([tenantId])
-  @@index([alertType])
-  @@index([status])
-```
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/data-graph/enrich` | `data-graph:admin` | Enrich graph with risk/attack/control nodes |
+| GET | `/data-graph/analytics/centrality` | `data-graph:read` | Node centrality analysis |
+| GET | `/data-graph/analytics/risk-propagation/:nodeId` | `data-graph:read` | Risk propagation from node |
+| GET | `/data-graph/analytics/impact-radius/:nodeId` | `data-graph:read` | Impact radius analysis |
+| GET | `/data-graph/analytics/clusters` | `data-graph:read` | Graph clustering |
+| POST | `/data-graph/sync` | `data-graph:admin` | Sync all entities into graph |
 
-### New Services
-- `ShadowDataService` — Detection orchestrator
-- `FingerprintService` — Content-based fingerprinting for duplicate detection
-- `OwnershipInferenceService` — Infer dataset ownership from access patterns
+### 8.5 Services to Modify
+- `DataGraphService` — add new node/edge type constants, `enrichGraph()`, `syncAllEntities()`
 
-### APIs
-- `GET /shadow-data/alerts` — List shadow data alerts
-- `GET /shadow-data/alerts/:id` — Alert details
-- `PATCH /shadow-data/alerts/:id/status` — Update alert status
-- `GET /shadow-data/stats` — Shadow data statistics
-- `POST /shadow-data/scan` — Trigger shadow data detection scan
+### 8.6 New Services Required
+- `GraphAnalyticsService` (in existing `data-graph` module)
+  - `computeCentrality(tenantId)` — identify most connected/critical nodes
+  - `computeRiskPropagation(tenantId, nodeId)` — how risk spreads from a node
+  - `computeImpactRadius(tenantId, nodeId)` — blast radius of a compromise
+  - `computeClusters(tenantId)` — identify tightly-coupled clusters
+- `GraphEnrichmentService` (in existing `data-graph` module)
+  - `enrichWithRiskSignals(tenantId)` — create nodes for active risk findings
+  - `enrichWithAttackVectors(tenantId)` — create nodes for known attack paths
+  - `enrichWithControls(tenantId)` — create nodes for compliance controls
+  - `syncEntities(tenantId)` — ensure all entities have graph representation
 
-### New Files
-- `apps/api/src/modules/shadow-data/shadow-data.module.ts`
-- `apps/api/src/modules/shadow-data/shadow-data.service.ts`
-- `apps/api/src/modules/shadow-data/fingerprint.service.ts`
-- `apps/api/src/modules/shadow-data/ownership-inference.service.ts`
-- `apps/api/src/modules/shadow-data/shadow-data.controller.ts`
-- `apps/api/src/modules/shadow-data/dto/shadow-data.dto.ts`
+### 8.7 Migration Impact
+- 1 new table, no existing table changes (node/edge types are strings)
 
-### Files to Modify
-- `apps/api/src/app.module.ts`
-- `apps/api/prisma/schema.prisma`
+### 8.8 Risks & Assumptions
+- Graph analytics on large tenants may be expensive — implement caching and async
+- Graph must stay in sync with entity changes — event listeners needed
 
 ---
 
-## MODULE 10: SENSITIVE DATA LINEAGE & PROPAGATION
+## MODULE 9: AI-DRIVEN COMPLIANCE ADVISOR
 
-### Existing Implementation
-- No lineage tracking exists
-- Data graph (Module 5) will provide relationship infrastructure
+### 9.1 Existing Implementation Review
+- `ComplianceService` has `detectGaps()`, `autoCollectEvidence()`, `mapCrossRegulation()`, `importFramework()`
+- `Regulation`, `Obligation`, `Control`, `ObligationControl`, `ControlGap` models exist
+- `ComplianceFramework` supports system and custom frameworks
+- GDPR, DPDP, ISO 27701, NIST already loaded
+- Missing: AI-driven control mapping, automated gap remediation, NL compliance queries
 
-### Upgrade Architecture
-Track how sensitive data propagates from origin to downstream datasets, vendors, and AI systems. Enable breach impact analysis.
+### 9.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** Add `ComplianceAdvisorService` to the existing `compliance` module.
+
+### 9.3 Schema Changes
+
+```prisma
+model ComplianceAdvice {
+  id              String   @id @default(uuid())
+  tenantId        String
+  regulationId    String?
+  adviceType      String   // gap_remediation, control_recommendation, evidence_suggestion, interpretation
+  context         Json     // { question?, gapId?, controlId?, datasetIds? }
+  advice          String
+  citations       Json     // [{ source, article, text }]
+  confidence      Float
+  status          String   @default("active") // active, applied, dismissed
+  appliedActions  Json?
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, adviceType])
+  @@index([tenantId, regulationId])
+}
+
+model ControlMapping {
+  id              String   @id @default(uuid())
+  tenantId        String
+  sourceFramework String
+  sourceControlId String
+  targetFramework String
+  targetControlId String
+  mappingType     String   // exact, partial, related
+  confidence      Float
+  aiGenerated     Boolean  @default(false)
+  verifiedBy      String?
+  verifiedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, sourceFramework, sourceControlId, targetFramework, targetControlId])
+  @@index([tenantId, sourceFramework])
+}
 ```
-NEW MODEL: DataLineageRecord
-  id              UUID PK
-  tenantId        UUID
-  sourceAssetId   UUID FK → Asset
-  targetAssetId   UUID FK → Asset
-  transformType   VARCHAR(50)  // copy, etl, export, share, api_sync, backup, ai_training
-  dataCategories  JSON         // What data types flow through this link
-  isActive        BOOLEAN DEFAULT true
-  discoveredAt    TIMESTAMP
-  lastObservedAt  TIMESTAMP?
-  metadata        JSON?
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
 
-  @@index([tenantId])
-  @@index([sourceAssetId])
-  @@index([targetAssetId])
-  @@index([transformType])
-```
+### 9.4 APIs
 
-### New Services
-- `DataLineageService` — Build and query lineage graphs
-- `BreachImpactAnalyzer` — Given a breached asset, trace all downstream impact
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/compliance/advisor/ask` | `compliance:read` | Ask compliance question |
+| GET | `/compliance/advisor/gap-remediation/:gapId` | `compliance:read` | Get gap remediation advice |
+| POST | `/compliance/advisor/map-controls` | `compliance:admin` | AI cross-framework mapping |
+| GET | `/compliance/advisor/control-mappings` | `compliance:read` | List control mappings |
+| POST | `/compliance/advisor/assess-dataset/:assetId` | `compliance:read` | Assess dataset compliance |
+| GET | `/compliance/advisor/history` | `compliance:read` | Advice history |
 
-### APIs
-- `GET /lineage/asset/:assetId/upstream` — Trace data origins
-- `GET /lineage/asset/:assetId/downstream` — Trace data destinations
-- `GET /lineage/asset/:assetId/full` — Full lineage graph
-- `GET /lineage/breach-impact/:assetId` — Breach impact analysis
-- `POST /lineage/record` — Manually record a lineage link
+### 9.5 Services to Modify
+- `ComplianceService` — add `getAdvisorSummary()` delegation method
 
-### New Files
-- `apps/api/src/modules/lineage/lineage.module.ts`
-- `apps/api/src/modules/lineage/lineage.service.ts`
-- `apps/api/src/modules/lineage/breach-impact-analyzer.ts`
-- `apps/api/src/modules/lineage/lineage.controller.ts`
-- `apps/api/src/modules/lineage/dto/lineage.dto.ts`
+### 9.6 New Services Required
+- `ComplianceAdvisorService` (in existing `compliance` module)
+  - `askComplianceQuestion(tenantId, question)` — NL compliance query
+  - `adviseGapRemediation(tenantId, gapId)` — AI remediation for compliance gap
+  - `generateControlMappings(tenantId, sourceFramework, targetFramework)` — cross-framework
+  - `assessDatasetCompliance(tenantId, assetId)` — which regulations apply
 
-### Files to Modify
-- `apps/api/src/app.module.ts`
-- `apps/api/prisma/schema.prisma`
+### 9.7 Migration Impact
+- 2 new tables, no existing table changes
+
+### 9.8 Risks & Assumptions
+- AI compliance advice must include disclaimers — not a substitute for legal counsel
+- Cross-framework mappings need human verification for regulatory submissions
 
 ---
 
-## MODULE 11: DATA EXPOSURE & ATTACK PATH ANALYSIS
+## MODULE 10: ADAPTIVE DATA PROTECTION POLICIES
 
-### Existing Implementation
-- Risk scoring considers publicAccess and crossAccountAccess
-- No attack path modeling
+### 10.1 Existing Implementation Review
+- `RetentionPolicy` model with static rules
+- `RetentionService.enforcePolicy()` applies policies
+- `RiskScorer` produces risk scores but doesn't drive policy changes
+- No dynamic/adaptive policy engine exists
 
-### Upgrade Architecture
-Model attack paths from external identities through misconfigured assets to sensitive data. Generate scored attack path alerts.
+### 10.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** New `adaptive-policies` module that monitors signals and adjusts protection policies dynamically.
+
+### 10.3 Schema Changes
+
+```prisma
+model AdaptivePolicy {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  policyType      String   // access_control, encryption, retention, classification, monitoring
+  triggerConditions Json    // [{ signal, operator, threshold }]
+  actions         Json     // [{ actionType, parameters }]
+  currentState    String   @default("inactive") // inactive, monitoring, triggered, enforcing, cooldown
+  lastTriggeredAt DateTime?
+  lastEvaluatedAt DateTime?
+  triggerCount    Int      @default(0)
+  isEnabled       Boolean  @default(true)
+  cooldownMinutes Int      @default(60)
+  requiresApproval Boolean @default(true)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, policyType])
+  @@index([tenantId, isEnabled])
+}
+
+model PolicyExecution {
+  id              String   @id @default(uuid())
+  tenantId        String
+  policyId        String
+  triggerSignals  Json
+  actionsExecuted Json
+  status          String   @default("pending") // pending, approved, executing, completed, failed, rejected
+  approvedBy      String?
+  approvedAt      DateTime?
+  executedAt      DateTime?
+  completedAt     DateTime?
+  rollbackData    Json?
+
+  policy          AdaptivePolicy @relation(fields: [policyId], references: [id])
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, policyId])
+  @@index([tenantId, status])
+}
 ```
-NEW MODEL: AttackPath
-  id              UUID PK
-  tenantId        UUID
-  title           VARCHAR(500)
-  severity        VARCHAR(20)
-  score           DECIMAL(5,2)
-  pathNodes       JSON   // Ordered array of {nodeType, nodeId, label, vulnerability}
-  entryPoint      JSON   // {type, identifier, description}
-  targetAsset     UUID FK → Asset
-  targetDataTypes JSON   // What sensitive data is reachable
-  status          VARCHAR(50)  // active, mitigated, false_positive
-  mitigatedAt     TIMESTAMP?
-  mitigatedBy     UUID?
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
 
-  @@index([tenantId])
-  @@index([severity])
-  @@index([status])
-```
+### 10.4 APIs
 
-### New Services
-- `AttackPathService` — Discovery, analysis, scoring
-- `AttackPathAnalyzer` — Path construction from identity→asset→data graph
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/adaptive-policies` | `policies:admin` | Create adaptive policy |
+| GET | `/adaptive-policies` | `policies:read` | List policies |
+| GET | `/adaptive-policies/:id` | `policies:read` | Get policy details |
+| PATCH | `/adaptive-policies/:id` | `policies:admin` | Update policy |
+| DELETE | `/adaptive-policies/:id` | `policies:admin` | Delete policy |
+| POST | `/adaptive-policies/:id/evaluate` | `policies:admin` | Manually evaluate |
+| GET | `/adaptive-policies/:id/executions` | `policies:read` | Execution history |
+| POST | `/adaptive-policies/executions/:id/approve` | `policies:admin` | Approve execution |
 
-### APIs
-- `GET /attack-paths` — List attack paths with filters
-- `GET /attack-paths/:id` — Attack path details
-- `PATCH /attack-paths/:id/status` — Update status
-- `GET /attack-paths/stats` — Summary statistics
-- `POST /attack-paths/analyze` — Trigger analysis
+### 10.5 Services to Modify
+- None — consumes events from existing services
 
-### New Files
-- `apps/api/src/modules/attack-paths/attack-paths.module.ts`
-- `apps/api/src/modules/attack-paths/attack-paths.service.ts`
-- `apps/api/src/modules/attack-paths/attack-path-analyzer.ts`
-- `apps/api/src/modules/attack-paths/attack-paths.controller.ts`
-- `apps/api/src/modules/attack-paths/dto/attack-path.dto.ts`
+### 10.6 New Services Required
+- `AdaptivePoliciesModule` (new module)
+- `AdaptivePolicyService` — CRUD and lifecycle
+- `PolicyEvaluationEngine` — evaluates triggers against current signals
+- `PolicyExecutionService` — executes via existing RemediationService, RetentionService
+- `SignalCollector` — gathers signals from risk scores, access patterns, threats
 
-### Files to Modify
-- `apps/api/src/app.module.ts`
-- `apps/api/prisma/schema.prisma`
+### 10.7 Migration Impact
+- 2 new tables, 1 new module
+- New permissions: `policies:read`, `policies:admin`
+
+### 10.8 Risks & Assumptions
+- Adaptive policies could cause cascading enforcement if not bounded
+- Cooldown periods and approval gates are critical safety mechanisms
 
 ---
 
-## MODULE 12: CONSENT MANAGEMENT UPGRADE
+## MODULE 11: AI-DRIVEN INCIDENT RESPONSE
 
-### Existing Implementation
-- `ConsentService` — 492 lines with full CRUD for notices, purposes, records, revocation, stats
-- Models: `ProcessingPurpose`, `ConsentNotice`, `DataSubject`, `ConsentRecord`
-- Records channel, IP, userAgent, proof, lawfulBasis
-- Already comprehensive
+### 11.1 Existing Implementation Review
+- `IncidentsService` has `detectBreach()`, `trackNotifications()`, `calculateDeadline()`
+- `Incident` model tracks severity, personal data breach flag, forensic evidence
+- `BreachDetectionRule` model exists for automated detection
+- `WorkflowService.startBreachWorkflow()` orchestrates response
+- Missing: AI classification, automated playbooks, impact analysis, containment
 
-### Upgrade Architecture
-Add consent integration with DSAR, retention, and processing registry. Add consent preference center API, version-aware consent tracking, jurisdiction-aware defaults.
+### 11.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** Extend existing `incidents` module with AI-powered analysis.
+
+### 11.3 Schema Changes
+
+```prisma
+model IncidentPlaybook {
+  id              String   @id @default(uuid())
+  tenantId        String
+  incidentId      String
+  playbookType    String   // containment, investigation, notification, recovery
+  steps           Json     // [{ order, action, target, status, executedAt, result }]
+  aiGenerated     Boolean  @default(true)
+  status          String   @default("proposed") // proposed, approved, executing, completed, paused
+  approvedBy      String?
+  approvedAt      DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  incident        Incident @relation(fields: [incidentId], references: [id])
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, incidentId])
+  @@index([tenantId, status])
+}
+
+model IncidentImpactAnalysis {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  incidentId          String
+  affectedAssetCount  Int
+  affectedSubjectCount Int
+  affectedVendorCount Int
+  dataCategories      Json     // [{ category, recordCount }]
+  jurisdictions       Json     // [{ jurisdiction, subjectCount, notificationRequired }]
+  regulatoryImpact    Json     // [{ regulation, obligations[], deadlines[] }]
+  businessImpact      Json     // { financialExposure, reputationalRisk, operationalImpact }
+  containmentStatus   String   @default("uncontained")
+  analyzedAt          DateTime @default(now())
+
+  incident            Incident @relation(fields: [incidentId], references: [id])
+  tenant              Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, incidentId])
+}
+
+// ADD COLUMNS to existing Incident:
+// aiClassification    String?
+// aiSeverityScore     Float?
+// containmentStatus   String?
+// playbookGenerated   Boolean  @default(false)
 ```
-MODIFY MODEL: ConsentRecord
-  ADD FIELD: linkedDsarId     UUID?   // DSAR that triggered revocation
-  ADD FIELD: linkedRopaId     UUID?   // Processing activity this consent covers
-  ADD FIELD: jurisdiction     VARCHAR(50)?  // Data subject's jurisdiction
 
-MODIFY MODEL: ProcessingPurpose
-  ADD FIELD: linkedRopaId     UUID?   // Link to RoPA entry
-  ADD FIELD: retentionDays    INT?    // Retention period for data under this purpose
-  ADD FIELD: jurisdictions    JSON?   // Applicable jurisdictions
-```
+### 11.4 APIs
 
-### Services to Extend
-- `ConsentService` — Add `getPreferenceCenter()`, `getConsentByJurisdiction()`, `linkToRopa()`, `getConsentTimeline()`
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/incidents/:id/ai-classify` | `incidents:admin` | AI incident classification |
+| POST | `/incidents/:id/impact-analysis` | `incidents:admin` | Run impact analysis |
+| GET | `/incidents/:id/impact` | `incidents:read` | Get impact analysis |
+| POST | `/incidents/:id/playbook` | `incidents:admin` | Generate response playbook |
+| GET | `/incidents/:id/playbook` | `incidents:read` | Get playbook |
+| POST | `/incidents/:id/playbook/approve` | `incidents:admin` | Approve playbook |
+| POST | `/incidents/:id/contain` | `incidents:admin` | Execute containment |
 
-### APIs to Extend
-- `GET /consent/preference-center/:dataSubjectId` — Full consent state for a data subject
-- `GET /consent/jurisdictions` — Consent stats by jurisdiction
-- `POST /consent/link-ropa` — Link consent purpose to RoPA entry
+### 11.5 Services to Modify
+- `IncidentsService` — add `getImpactAnalysis()`, `getPlaybook()` delegation methods
 
-### Files to Modify
-- `apps/api/src/modules/consent/consent.service.ts`
-- `apps/api/src/modules/consent/consent.controller.ts`
-- `apps/api/src/modules/consent/dto/consent.dto.ts`
-- `apps/api/prisma/schema.prisma`
+### 11.6 New Services Required
+- `IncidentResponseAiService` (in existing `incidents` module)
+  - `classifyIncident(tenantId, incidentId)` — AI classification and severity
+  - `analyzeImpact(tenantId, incidentId)` — full blast radius via DataGraph
+  - `generatePlaybook(tenantId, incidentId)` — response playbook
+  - `executeContainment(tenantId, incidentId)` — automated containment
 
-### Migration Impact
-- 5 new nullable columns across 2 tables — Backward compatible
+### 11.7 Migration Impact
+- 2 new tables, 4 new columns on `Incident`
+
+### 11.8 Risks & Assumptions
+- Automated containment must have circuit breakers
+- Impact analysis accuracy depends on DataGraph completeness
 
 ---
 
-## MODULE 13: DSAR AUTOMATION UPGRADE
+## MODULE 12: CONTINUOUS DATA SECURITY VALIDATION
 
-### Existing Implementation
-- `DsarService` — 492 lines with full CRUD, status management, assignment, timeline, stats
-- Temporal `dsarWorkflow` with 5 activities: verify, collect, generate, notifyComplete, notifyOverdue
-- SLA tracking with due date monitoring
+### 12.1 Existing Implementation Review
+- `AttackPathAnalyzer.analyzeAttackPaths()` performs static analysis
+- `RemediationExecutorService.validate()` checks action executability
+- `IdentityAccessService.buildMappings()` can re-scan access
+- No continuous validation loop or posture scoring exists
 
-### Upgrade Architecture
-Add cross-system data discovery using data graph, lineage-based search, automated response generation, data deletion verification.
+### 12.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** New `security-validation` module for continuous posture validation.
+
+### 12.3 Schema Changes
+
+```prisma
+model ValidationRun {
+  id              String   @id @default(uuid())
+  tenantId        String
+  runType         String   // full, access_control, remediation_verify, attack_surface, compliance
+  status          String   @default("pending") // pending, running, completed, failed
+  testsTotal      Int      @default(0)
+  testsPassed     Int      @default(0)
+  testsFailed     Int      @default(0)
+  testsSkipped    Int      @default(0)
+  postureScore    Float?   // 0-100
+  findings        Json?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, runType])
+  @@index([tenantId, status])
+}
+
+model ValidationTest {
+  id              String   @id @default(uuid())
+  tenantId        String
+  testName        String
+  testCategory    String   // access_control, encryption, retention, classification, network
+  testLogic       Json     // { check, target, expectedResult }
+  isEnabled       Boolean  @default(true)
+  lastResult      String?  // pass, fail, skip
+  lastRunAt       DateTime?
+  failCount       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, testName])
+  @@index([tenantId, testCategory])
+}
 ```
-MODIFY MODEL: DsarRequest
-  ADD FIELD: discoveredDataSources JSON?  // [{sourceId, assetCount, status}]
-  ADD FIELD: responseMetadata      JSON?  // {packageSize, formatType, generatedAt}
-  ADD FIELD: deletionVerification  JSON?  // {verified, verifiedAt, verifiedBy, evidence}
-  ADD FIELD: automationLevel       VARCHAR(50)?  // manual, semi_auto, full_auto
-```
 
-### Services to Extend
-- `DsarService` — Add `discoverSubjectData()`, `generateResponsePackage()`, `verifyDeletion()`
-- DSAR activities — Implement actual data collection using ConnectorRegistry
+### 12.4 APIs
 
-### APIs to Extend
-- `POST /dsar/requests/:id/discover` — Trigger cross-system discovery for a DSAR
-- `GET /dsar/requests/:id/discovered-data` — View discovered data summary
-- `POST /dsar/requests/:id/generate-response` — Generate response package
-- `POST /dsar/requests/:id/verify-deletion` — Verify deletion completion
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/security-validation/run` | `validation:admin` | Start validation run |
+| GET | `/security-validation/runs` | `validation:read` | List runs |
+| GET | `/security-validation/runs/:id` | `validation:read` | Get run results |
+| GET | `/security-validation/posture` | `validation:read` | Current posture score |
+| GET | `/security-validation/tests` | `validation:read` | List tests |
+| POST | `/security-validation/tests` | `validation:admin` | Create custom test |
+| PATCH | `/security-validation/tests/:id` | `validation:admin` | Update test |
+| POST | `/security-validation/verify-remediation/:actionId` | `validation:admin` | Verify remediation |
 
-### Files to Modify
-- `apps/api/src/modules/dsar/dsar.service.ts`
-- `apps/api/src/modules/dsar/dsar.controller.ts`
-- `apps/api/src/modules/dsar/dto/dsar.dto.ts`
-- `apps/api/src/core/workflow/activities/dsar.activities.ts`
-- `apps/api/prisma/schema.prisma`
+### 12.5 Services to Modify
+- None — consumes existing services
+
+### 12.6 New Services Required
+- `SecurityValidationModule` (new module)
+- `SecurityValidationService` — orchestrates validation runs
+- `PostureScorer` — computes posture from test results
+- `AccessControlValidator` — validates access controls haven't drifted
+- `RemediationVerifier` — confirms remediations are still effective
+- `EncryptionValidator` — validates encryption of sensitive assets
+
+### 12.7 Migration Impact
+- 2 new tables, 1 new module
+- New permissions: `validation:read`, `validation:admin`
+
+### 12.8 Risks & Assumptions
+- Continuous validation generates load — must be rate-limited
+- Posture scoring weights need calibration per tenant
 
 ---
 
-## MODULE 14: DPIA / PRIVACY RISK UPGRADE
+## MODULE 13: PLATFORM OBSERVABILITY & TELEMETRY
 
-### Existing Implementation
-- `AssessmentsService` — 276 lines with CRUD, stats
-- `PrivacyAssessment` model with riskItems, overallRiskScore, linkedRopaId, evidenceIds
+### 13.1 Existing Implementation Review
+- `HealthModule` provides basic liveness checks
+- `AuditLog` captures all mutations with timestamps
+- No service-level metrics, connector health tracking, or performance telemetry
 
-### Upgrade Architecture
-Add automated DPIA triggers, privacy risk scoring engine, processing activity linkage, multi-stage approval workflows.
+### 13.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** New `observability` module with metrics collection via NestJS interceptor.
+
+### 13.3 Schema Changes
+
+```prisma
+model ServiceMetric {
+  id              String   @id @default(uuid())
+  tenantId        String?  // null = platform-level
+  serviceName     String
+  metricName      String   // request_count, error_count, latency_p50, latency_p95, latency_p99
+  metricValue     Float
+  tags            Json?
+  recordedAt      DateTime @default(now())
+
+  @@index([serviceName, metricName, recordedAt])
+  @@index([tenantId, serviceName])
+}
+
+model ConnectorHealthLog {
+  id              String   @id @default(uuid())
+  tenantId        String
+  dataSourceId    String
+  healthStatus    String   // healthy, degraded, unhealthy, unreachable
+  responseTimeMs  Int?
+  errorMessage    String?
+  checksPerformed Json
+  checkedAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, dataSourceId])
+  @@index([tenantId, healthStatus])
+}
+
+model PlatformAlert {
+  id              String   @id @default(uuid())
+  tenantId        String?
+  alertType       String   // service_error, connector_failure, high_latency, queue_backlog, disk_usage
+  severity        String   // critical, warning, info
+  source          String
+  message         String
+  metadata        Json?
+  status          String   @default("active") // active, acknowledged, resolved
+  acknowledgedBy  String?
+  resolvedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([status, severity])
+  @@index([tenantId, alertType])
+}
 ```
-MODIFY MODEL: PrivacyAssessment
-  ADD FIELD: triggerType        VARCHAR(50)?   // manual, automated, regulatory
-  ADD FIELD: triggerReason      TEXT?
-  ADD FIELD: linkedVendorId     UUID?
-  ADD FIELD: linkedConsentIds   JSON?
-  ADD FIELD: approvalWorkflowId UUID?
-  ADD FIELD: privacyRiskScore   JSON?          // Structured privacy-specific risk breakdown
 
-NEW MODEL: DpiaTriggerRule
-  id              UUID PK
-  tenantId        UUID
-  name            VARCHAR(255)
-  condition       JSON    // {field, operator, value} rules
-  isActive        BOOLEAN DEFAULT true
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
-```
+### 13.4 APIs
 
-### Services to Extend
-- `AssessmentsService` — Add `checkTriggers()`, `calculatePrivacyRisk()`, `linkToProcessing()`
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/observability/metrics` | `observability:read` | Get service metrics |
+| GET | `/observability/connector-health` | `observability:read` | Connector health |
+| GET | `/observability/alerts` | `observability:read` | Platform alerts |
+| PATCH | `/observability/alerts/:id` | `observability:admin` | Acknowledge/resolve |
+| GET | `/observability/dashboard` | `observability:read` | Telemetry dashboard |
+| GET | `/observability/performance` | `observability:read` | Performance summary |
 
-### APIs to Extend
-- `POST /assessments/check-triggers` — Evaluate DPIA trigger rules
-- `GET /assessments/:id/privacy-risk` — Detailed privacy risk breakdown
-- `POST /assessments/trigger-rules` — CRUD for trigger rules
-- `GET /assessments/trigger-rules` — List trigger rules
+### 13.5 Services to Modify
+- None — uses NestJS interceptors for automatic collection
 
-### Files to Modify
-- `apps/api/src/modules/assessments/assessments.service.ts`
-- `apps/api/src/modules/assessments/assessments.controller.ts`
-- `apps/api/src/modules/assessments/dto/assessment.dto.ts`
-- `apps/api/prisma/schema.prisma`
+### 13.6 New Services Required
+- `ObservabilityModule` (new module)
+- `MetricsCollectorService` — collects metrics via interceptor
+- `ConnectorHealthService` — periodic health checks on data sources
+- `PlatformAlertService` — generates alerts based on thresholds
+- `TelemetryDashboardService` — aggregates for dashboard
+- `MetricsInterceptor` — NestJS interceptor for latency/error tracking
+
+### 13.7 Migration Impact
+- 3 new tables, 1 new module
+- New permissions: `observability:read`, `observability:admin`
+- Global interceptor registration
+
+### 13.8 Risks & Assumptions
+- High-volume metrics can bloat DB — implement retention/rollup
+- Interceptor must be lightweight (<1ms overhead)
 
 ---
 
-## MODULE 15: RETENTION GOVERNANCE UPGRADE
+## MODULE 14: AUTONOMOUS PLATFORM OPTIMIZATION
 
-### Existing Implementation
-- `RetentionService` — 258 lines with CRUD, disposal trigger
-- `RetentionPolicy` model with period, action, legal basis, regulations
-- Temporal `retentionDisposalWorkflow` with activities
+### 14.1 Existing Implementation Review
+- `DataGraphService.findPaths()` uses BFS — no query optimization
+- `RiskScorer` is deterministic — no self-tuning
+- No resource usage tracking or performance profiling exists
 
-### Upgrade Architecture
-Ensure every dataset has a retention policy. Add retention violation detection, automated archival workflows, disposition certificates.
+### 14.2 Upgrade Architecture
 
-### Schema Changes
+**Approach:** New `platform-optimization` module that analyzes performance and suggests optimizations.
+
+### 14.3 Schema Changes
+
+```prisma
+model OptimizationRecommendation {
+  id              String   @id @default(uuid())
+  tenantId        String?  // null = platform-level
+  category        String   // query_performance, resource_usage, risk_scoring, scan_efficiency, index_suggestion
+  target          String
+  description     String
+  currentMetric   Json
+  expectedImprovement Json
+  implementation  Json     // { type, steps[], autoApplicable }
+  priority        String   // critical, high, medium, low
+  status          String   @default("proposed") // proposed, approved, applied, rejected, reverted
+  appliedAt       DateTime?
+  appliedBy       String?
+  result          Json?
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, category])
+  @@index([status, priority])
+}
+
+model PerformanceBaseline {
+  id              String   @id @default(uuid())
+  serviceName     String
+  operationName   String
+  baselineLatencyMs Float
+  baselineThroughput Float
+  baselineErrorRate Float
+  sampleSize      Int
+  calculatedAt    DateTime @default(now())
+  validUntil      DateTime
+
+  @@unique([serviceName, operationName])
+}
 ```
-MODIFY MODEL: RetentionPolicy
-  ADD FIELD: appliedAssetCount  INT DEFAULT 0
-  ADD FIELD: lastEnforcedAt     TIMESTAMP?
-  ADD FIELD: nextEnforcementAt  TIMESTAMP?
 
-NEW MODEL: RetentionViolation
-  id              UUID PK
-  tenantId        UUID
-  assetId         UUID FK → Asset
-  violationType   VARCHAR(50)  // no_policy, expired, overdue_review
-  description     TEXT
-  severity        VARCHAR(20)
-  status          VARCHAR(50)  // open, remediated, accepted
-  remediatedAt    TIMESTAMP?
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
+### 14.4 APIs
 
-NEW MODEL: DispositionCertificate
-  id              UUID PK
-  tenantId        UUID
-  policyId        UUID FK → RetentionPolicy
-  assetId         UUID FK → Asset
-  action          VARCHAR(50)  // deleted, archived, anonymized
-  executedAt      TIMESTAMP
-  executedBy      UUID
-  evidence        JSON
-  integrityHash   VARCHAR(64)
-  createdAt       TIMESTAMP
-```
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/platform-optimization/analyze` | `platform:admin` | Run optimization analysis |
+| GET | `/platform-optimization/recommendations` | `platform:read` | List recommendations |
+| POST | `/platform-optimization/recommendations/:id/apply` | `platform:admin` | Apply recommendation |
+| POST | `/platform-optimization/recommendations/:id/revert` | `platform:admin` | Revert recommendation |
+| GET | `/platform-optimization/baselines` | `platform:read` | View baselines |
+| GET | `/platform-optimization/health-report` | `platform:read` | Platform health report |
 
-### Services to Extend
-- `RetentionService` — Add `detectViolations()`, `enforcePolicy()`, `generateDispositionCertificate()`
+### 14.5 Services to Modify
+- None — reads metrics from observability module
 
-### APIs to Extend
-- `GET /retention/violations` — List retention violations
-- `GET /retention/disposition-certificates` — List disposition proofs
-- `POST /retention/enforce` — Trigger enforcement scan
-- `GET /retention/coverage` — Asset retention coverage stats
+### 14.6 New Services Required
+- `PlatformOptimizationModule` (new module)
+- `OptimizationAnalyzer` — generates recommendations from performance data
+- `QueryOptimizer` — identifies slow queries and suggests indexes
+- `ResourceAnalyzer` — monitors memory, CPU, queue depths
+- `RiskScoringOptimizer` — suggests weight adjustments
+- `ScanEfficiencyAnalyzer` — identifies redundant scans
 
-### Files to Modify
-- `apps/api/src/modules/retention/retention.service.ts`
-- `apps/api/src/modules/retention/retention.controller.ts`
-- `apps/api/src/modules/retention/dto/retention.dto.ts`
-- `apps/api/prisma/schema.prisma`
+### 14.7 Migration Impact
+- 2 new tables, 1 new module
+- New permissions: `platform:read`, `platform:admin`
+- Depends on Module 13 (Observability) for metric data
+
+### 14.8 Risks & Assumptions
+- Auto-optimization could degrade performance — approval required
+- Index suggestions need DBA review
+- Risk scoring weight changes affect all tenants
 
 ---
 
-## MODULE 16: ROPA PROCESSING REGISTRY UPGRADE
+## CROSS-MODULE INTEGRATION MAP
 
-### Existing Implementation
-- `RopaService` — 268 lines with CRUD, export
-- `RopaEntry` model with all Article 30 required fields
-
-### Upgrade Architecture
-Add vendor linkage, cross-border transfer tracking, automated completeness scoring, regulatory report generation.
-
-### Schema Changes
 ```
-MODIFY MODEL: RopaEntry
-  ADD FIELD: linkedVendorIds       JSON?
-  ADD FIELD: linkedTransferIds     JSON?   // Cross-border transfer references
-  ADD FIELD: linkedConsentPurposes JSON?   // Already exists — verify
-  ADD FIELD: completenessScore     DECIMAL(3,2)?
-  ADD FIELD: lastAuditedAt         TIMESTAMP?
-  ADD FIELD: auditedBy             UUID?
-```
+Module Dependencies (→ = depends on):
 
-### Services to Extend
-- `RopaService` — Add `calculateCompleteness()`, `linkVendors()`, `generateReport()`, `getProcessingMap()`
-
-### APIs to Extend
-- `GET /ropa/completeness` — Completeness scores across all entries
-- `GET /ropa/report` — Generate regulatory RoPA report
-- `POST /ropa/:id/link-vendors` — Link vendors to entry
-- `GET /ropa/processing-map` — Visual processing map data
-
-### Files to Modify
-- `apps/api/src/modules/ropa/ropa.service.ts`
-- `apps/api/src/modules/ropa/ropa.controller.ts`
-- `apps/api/src/modules/ropa/dto/ropa.dto.ts`
-- `apps/api/prisma/schema.prisma`
-
----
-
-## MODULE 17: COMPLIANCE AUTOMATION UPGRADE
-
-### Existing Implementation
-- `ComplianceService` — 419 lines with regulations, controls, evidence, scorecard
-- Models: `Regulation`, `Obligation`, `Control`, `ObligationControl`, `EvidenceArtifact`
-- Scorecard computes per-regulation compliance percentages
-
-### Upgrade Architecture
-Add automated evidence collection, control gap analysis, regulatory framework templates, cross-regulation mapping.
-
-### Schema Changes
-```
-MODIFY MODEL: Control
-  ADD FIELD: automatedCheck    JSON?    // {type, config} for automated evidence
-  ADD FIELD: lastCheckedAt     TIMESTAMP?
-  ADD FIELD: checkResult       VARCHAR(50)?  // pass, fail, partial, error
-  ADD FIELD: checkEvidence     JSON?
-
-NEW MODEL: ComplianceFramework
-  id            UUID PK
-  name          VARCHAR(255)
-  shortName     VARCHAR(50)   // GDPR, DPDP, ISO27701, NIST_PF
-  version       VARCHAR(50)
-  isSystem      BOOLEAN DEFAULT true
-  obligations   JSON          // Pre-loaded obligation definitions
-  createdAt     TIMESTAMP
-
-NEW MODEL: ControlGap
-  id              UUID PK
-  tenantId        UUID
-  regulationId    UUID FK → Regulation
-  obligationId    UUID FK → Obligation
-  gapDescription  TEXT
-  severity        VARCHAR(20)
-  remediationPlan TEXT?
-  status          VARCHAR(50)  // identified, planned, in_progress, closed
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
+1.  Co-Pilot          → DataGraph, DSPM, Lineage, IdentityAccess, AttackPaths, Compliance, Vendors
+2.  Risk Intelligence  → DSPM (RiskScorer), DataGraph, ShadowData, AttackPaths
+3.  Remediation Agent  → Remediation, DSPM, Workflow, AttackPaths
+4.  Attack Simulation  → AttackPaths (Analyzer), DataGraph, IdentityAccess
+5.  Threat Hunting     → IdentityAccess, ShadowData, Discovery, EventBus
+6.  AI Governance Intel → AiGovernance (existing), DataGraph, Compliance
+7.  Predictive Risk    → DSPM, ShadowData, Vendors, IdentityAccess
+8.  Knowledge Graph    → DataGraph (existing), all entity-producing modules
+9.  Compliance Advisor → Compliance (existing), DataGraph, Classification
+10. Adaptive Policies  → DSPM, Remediation, Retention, IdentityAccess, EventBus
+11. Incident Response  → Incidents (existing), DataGraph, Remediation, Compliance
+12. Security Validation→ AttackPaths, IdentityAccess, Remediation, Discovery
+13. Observability      → All services (via interceptor), Connectors
+14. Platform Optimize  → Observability (Module 13), DataGraph, DSPM
 ```
 
-### Services to Extend
-- `ComplianceService` — Add `detectGaps()`, `autoCollectEvidence()`, `mapCrossRegulation()`, `importFramework()`
+## RECOMMENDED IMPLEMENTATION ORDER
 
-### APIs to Extend
-- `GET /compliance/gaps` — List control gaps
-- `POST /compliance/auto-evidence` — Trigger automated evidence collection
-- `GET /compliance/cross-map` — Cross-regulation control mapping
-- `POST /compliance/frameworks/import` — Import a regulation framework
-- `GET /compliance/frameworks` — List available frameworks
-
-### Files to Modify
-- `apps/api/src/modules/compliance/compliance.service.ts`
-- `apps/api/src/modules/compliance/compliance.controller.ts`
-- `apps/api/src/modules/compliance/dto/compliance.dto.ts`
-- `apps/api/prisma/schema.prisma`
-
----
-
-## MODULE 18: THIRD-PARTY RISK UPGRADE
-
-### Existing Implementation
-- `VendorsService` — 328 lines with CRUD, assessments, stats
-- Models: `Vendor`, `VendorAssessment`
-
-### Upgrade Architecture
-Add vendor data access tracking, security posture scoring, compliance evidence collection, continuous monitoring.
-
-### Schema Changes
 ```
-MODIFY MODEL: Vendor
-  ADD FIELD: securityPosture     JSON?    // Structured security assessment
-  ADD FIELD: complianceEvidence  JSON?    // [{framework, status, lastAudit}]
-  ADD FIELD: dataAccessSummary   JSON?    // {assetCount, dataTypes, lastAccess}
-  ADD FIELD: monitoringEnabled   BOOLEAN DEFAULT false
+Phase 1 — Foundation (Modules 13, 8):
+  Module 13: Platform Observability & Telemetry
+  Module 8:  Security Knowledge Graph Expansion
 
-MODIFY MODEL: VendorAssessment
-  ADD FIELD: automatedFindings   JSON?    // Auto-detected issues
-  ADD FIELD: complianceMapping   JSON?    // {framework: {obligationId: status}}
+Phase 2 — Intelligence Core (Modules 2, 7, 6):
+  Module 2:  AI Risk Intelligence Engine
+  Module 7:  Predictive Data Risk Engine
+  Module 6:  AI Governance Intelligence
+
+Phase 3 — AI Services (Modules 1, 9, 5):
+  Module 1:  AI Security Co-Pilot
+  Module 9:  AI-Driven Compliance Advisor
+  Module 5:  Data Exposure Threat Hunting Engine
+
+Phase 4 — Autonomous Operations (Modules 3, 4, 10):
+  Module 3:  Autonomous Remediation Agent
+  Module 4:  AI Attack Simulation Engine
+  Module 10: Adaptive Data Protection Policies
+
+Phase 5 — Validation & Optimization (Modules 11, 12, 14):
+  Module 11: AI-Driven Incident Response
+  Module 12: Continuous Data Security Validation
+  Module 14: Autonomous Platform Optimization
 ```
 
-### Services to Extend
-- `VendorsService` — Add `assessSecurityPosture()`, `getVendorDataAccess()`, `monitorVendor()`
+## AGGREGATE IMPACT SUMMARY
 
-### APIs to Extend
-- `GET /vendors/:id/data-access` — What data does this vendor access?
-- `GET /vendors/:id/security-posture` — Security posture details
-- `POST /vendors/:id/monitor` — Enable/disable monitoring
-- `GET /vendors/risk-matrix` — Vendor risk matrix view
+| Category | Count |
+|----------|-------|
+| New Prisma models | 22 |
+| Modified Prisma models (new columns) | 4 (EntityRiskProfile, RemediationAction, AiSystem, Incident) |
+| New modules | 6 (co-pilot, threat-hunting, adaptive-policies, security-validation, observability, platform-optimization) |
+| Extended modules | 8 (dspm, attack-paths, remediation, ai-governance, compliance, incidents, data-graph, dashboard) |
+| New services | ~35 |
+| New API endpoints | ~65 |
+| New permission pairs | 12 (read/admin) |
+| Existing services modified | ~10 (additive methods only) |
+| Breaking changes | 0 |
 
-### Files to Modify
-- `apps/api/src/modules/vendors/vendors.service.ts`
-- `apps/api/src/modules/vendors/vendors.controller.ts`
-- `apps/api/src/modules/vendors/dto/vendor.dto.ts`
-- `apps/api/prisma/schema.prisma`
+## NEW PERMISSIONS REGISTRY
 
----
+| Module | Permissions |
+|--------|------------|
+| Co-Pilot | `copilot:query`, `copilot:read` |
+| Threat Hunting | `threat-hunting:read`, `threat-hunting:admin` |
+| Adaptive Policies | `policies:read`, `policies:admin` |
+| Security Validation | `validation:read`, `validation:admin` |
+| Observability | `observability:read`, `observability:admin` |
+| Platform Optimization | `platform:read`, `platform:admin` |
 
-## MODULE 19: BREACH MONITORING UPGRADE
+Existing permissions (`dspm:read/admin`, `attack-paths:read/admin`, `remediation:read/admin`, `ai-governance:read/admin`, `compliance:read/admin`, `incidents:read/admin`, `data-graph:read/admin`) are reused for extended functionality in their respective modules.
 
-### Existing Implementation
-- `IncidentsService` — 399 lines with CRUD, stats
-- Temporal `breachNotificationWorkflow` with 5 activities
-- Models: `Incident` with full breach lifecycle fields
+## EVENT BUS ADDITIONS
 
-### Upgrade Architecture
-Add real-time breach detection signals, automated incident creation from anomalies, regulatory notification tracking, 72-hour timer.
+New event types on NATS JetStream (`privacyops.{eventType}`):
 
-### Schema Changes
-```
-MODIFY MODEL: Incident
-  ADD FIELD: detectionSource     VARCHAR(50)?   // manual, automated, external
-  ADD FIELD: regulatoryDeadline  TIMESTAMP?
-  ADD FIELD: notificationsSent   JSON?          // [{authority, sentAt, confirmationId}]
-  ADD FIELD: dataSubjectNotified BOOLEAN DEFAULT false
-  ADD FIELD: linkedAttackPathId  UUID?
-  ADD FIELD: linkedLineageIds    JSON?
-
-NEW MODEL: BreachDetectionRule
-  id              UUID PK
-  tenantId        UUID
-  name            VARCHAR(255)
-  ruleType        VARCHAR(50)  // large_export, unauthorized_access, external_exposure, anomaly
-  condition       JSON
-  severity        VARCHAR(20)
-  isActive        BOOLEAN DEFAULT true
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
-```
-
-### Services to Extend
-- `IncidentsService` — Add `detectBreach()`, `trackNotifications()`, `calculateDeadline()`
-
-### APIs to Extend
-- `POST /incidents/detection-rules` — CRUD for detection rules
-- `GET /incidents/detection-rules` — List rules
-- `GET /incidents/:id/notifications` — Regulatory notification tracking
-- `GET /incidents/:id/impact` — Impact analysis using lineage
-
-### Files to Modify
-- `apps/api/src/modules/incidents/incidents.service.ts`
-- `apps/api/src/modules/incidents/incidents.controller.ts`
-- `apps/api/src/modules/incidents/dto/incident.dto.ts`
-- `apps/api/prisma/schema.prisma`
-
----
-
-## MODULE 20: AI COMPLIANCE GOVERNANCE
-
-### Existing Implementation
-- No AI governance module exists
-- `AiRecommendation` model exists in schema (for AI-powered suggestions)
-- Discovery will be extended for AI dataset detection (Module 2)
-
-### Upgrade Architecture
-Track datasets used for AI training, AI system inventory, regulatory compliance (EU AI Act, DPDP), consent lineage for AI usage.
-
-### Schema Changes
-```
-NEW MODEL: AiSystem
-  id              UUID PK
-  tenantId        UUID
-  name            VARCHAR(255)
-  type            VARCHAR(50)    // ml_model, llm, recommendation, classification
-  riskCategory    VARCHAR(50)    // unacceptable, high, limited, minimal (EU AI Act)
-  status          VARCHAR(50)    // active, development, deprecated, retired
-  owner           UUID FK → User
-  description     TEXT?
-  trainingDatasets JSON          // [{assetId, dataTypes, consentBasis}]
-  purpose         TEXT?
-  regulatoryBasis JSON?          // [{regulation, article, compliance_status}]
-  lastAuditedAt   TIMESTAMP?
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
-
-  @@index([tenantId])
-  @@index([riskCategory])
-
-NEW MODEL: AiDatasetUsage
-  id              UUID PK
-  tenantId        UUID
-  aiSystemId      UUID FK → AiSystem
-  assetId         UUID FK → Asset
-  usageType       VARCHAR(50)  // training, validation, inference, fine_tuning
-  dataCategories  JSON
-  consentBasis    VARCHAR(50)?
-  startDate       TIMESTAMP
-  endDate         TIMESTAMP?
-  isActive        BOOLEAN DEFAULT true
-  createdAt       TIMESTAMP
-  updatedAt       TIMESTAMP
-```
-
-### New Services
-- `AiGovernanceService` — AI system CRUD, dataset usage tracking, compliance assessment
-
-### APIs
-- `POST /ai-governance/systems` — Register AI system
-- `GET /ai-governance/systems` — List AI systems
-- `GET /ai-governance/systems/:id` — System details
-- `PUT /ai-governance/systems/:id` — Update
-- `POST /ai-governance/dataset-usage` — Record dataset usage
-- `GET /ai-governance/dataset-usage` — List usage records
-- `GET /ai-governance/compliance-report` — AI compliance status
-
-### New Files
-- `apps/api/src/modules/ai-governance/ai-governance.module.ts`
-- `apps/api/src/modules/ai-governance/ai-governance.service.ts`
-- `apps/api/src/modules/ai-governance/ai-governance.controller.ts`
-- `apps/api/src/modules/ai-governance/dto/ai-governance.dto.ts`
-
-### Files to Modify
-- `apps/api/src/app.module.ts`
-- `apps/api/prisma/schema.prisma`
-
----
-
-## MODULE 21: DASHBOARDS & INTELLIGENCE UPGRADE
-
-### Existing Implementation
-- `DashboardService` — 229 lines: stats, riskDistribution, topRiskyAssets, recentActivity, complianceOverview
-- Frontend: main dashboard page with stat cards, risk chart, risky stores
-- 15 frontend pages total
-
-### Upgrade Architecture
-Add specialized dashboards for data risk, shadow data, identity access, attack paths, compliance posture. Add OpenSearch-powered analytics.
-
-### Schema Changes
-None — dashboards aggregate from existing data.
-
-### Services to Extend
-- `DashboardService` — Add methods for each dashboard view
-
-### APIs to Extend
-- `GET /dashboard/shadow-data` — Shadow data summary
-- `GET /dashboard/identity-access` — Identity access overview
-- `GET /dashboard/attack-paths` — Attack path summary
-- `GET /dashboard/data-risk` — Data risk heatmap data
-- `GET /dashboard/ai-governance` — AI compliance overview
-
-### Frontend Pages to Add
-- `apps/web/src/app/(dashboard)/shadow-data/page.tsx`
-- `apps/web/src/app/(dashboard)/identity-access/page.tsx`
-- `apps/web/src/app/(dashboard)/attack-paths/page.tsx`
-- `apps/web/src/app/(dashboard)/ai-governance/page.tsx`
-- `apps/web/src/app/(dashboard)/lineage/page.tsx`
-- `apps/web/src/app/(dashboard)/remediation/page.tsx`
-
-### Files to Modify
-- `apps/api/src/modules/dashboard/dashboard.service.ts`
-- `apps/api/src/modules/dashboard/dashboard.controller.ts`
-- `apps/web/src/components/layout/app-sidebar.tsx` — Add new nav items
-- `apps/web/src/hooks/use-api.ts` — Add new hooks
-
----
-
-## MODULE 22: DEVOPS / SECURITY HARDENING
-
-### Existing Implementation
-- `scripts/security-hardening.sql` — RLS policies, audit immutability, app role, indexes
-- Crypto module with AES-256-GCM envelope encryption
-- Helmet, CORS configuration in `main.ts`
-- Rate limiting guard
-
-### Upgrade Architecture
-Add secrets management, container hardening config, dependency scanning config, enhanced logging, API rate limiting per tenant.
-
-### New Files
-- `apps/api/src/core/security/rate-limiter.service.ts` — Tenant-aware rate limiting using Redis
-- `apps/api/src/core/security/secrets-manager.service.ts` — Vault/AWS Secrets Manager abstraction
-- `apps/api/src/core/security/request-logger.middleware.ts` — Structured security logging
-- `docker/Dockerfile.hardened` — Hardened container config
-- `docker/docker-compose.security.yml` — Security-focused compose
-- `.github/workflows/security-scan.yml` — Dependency & container scanning
-- `scripts/rotate-secrets.sh` — Secret rotation script
-
-### Files to Modify
-- `apps/api/src/main.ts` — Add security middleware
-- `apps/api/src/core/security/security-events.module.ts` — Register new providers
-- `.env.example` — Add secrets manager config vars
-
----
-
-## MODULE 23: QA & PLATFORM VALIDATION
-
-### Existing Implementation
-- 16 test files: 6 core tests (audit, ABAC, MFA, permissions, session, crypto) + 10 module tests
-- Tests use Jest with mocked Prisma, Audit, and EventBus services
-
-### Upgrade Architecture
-Add integration tests, schema validation, connector tests, risk engine tests, E2E workflow tests.
-
-### New Test Files
-- `apps/api/test/integration/workflow-engine.spec.ts`
-- `apps/api/test/integration/data-graph.spec.ts`
-- `apps/api/test/integration/risk-scoring.spec.ts`
-- `apps/api/test/modules/remediation/remediation.service.spec.ts`
-- `apps/api/test/modules/shadow-data/shadow-data.service.spec.ts`
-- `apps/api/test/modules/lineage/lineage.service.spec.ts`
-- `apps/api/test/modules/attack-paths/attack-paths.service.spec.ts`
-- `apps/api/test/modules/ai-governance/ai-governance.service.spec.ts`
-- `apps/api/test/modules/identity-access/identity-access.service.spec.ts`
-- `apps/api/test/connectors/base-connector.spec.ts`
-- `apps/api/test/e2e/dsar-workflow.e2e-spec.ts`
-- `apps/api/test/e2e/breach-workflow.e2e-spec.ts`
-- `apps/api/test/schema/prisma-schema-validation.spec.ts`
-
-### Files to Modify
-- `apps/api/package.json` — Add test scripts for integration/e2e
-
----
-
-## MODULE 24: PLATFORM STABILIZATION
-
-### Existing Issues Identified
-1. **Duplicate ApprovalRequest model** — FIXED in this session
-2. **Activity stubs** — All 4 activity files throw errors instead of no-op (by design for Temporal)
-3. **ConnectorRegistry** — Only 2 of 18 types implemented
-4. **Dashboard getDataMap** — Returns flat structure, should use data graph
-5. **Search service** — Connected but not used by any module for indexing
-
-### Stabilization Tasks
-1. **Schema audit** — Verify all FK references are valid, no orphaned indexes
-2. **Module dependency audit** — Ensure no circular dependencies between modules
-3. **OpenSearch integration** — Index assets, findings, incidents for full-text search
-4. **Event handler registration** — Subscribe to NATS events from all modules
-5. **Error handling audit** — Ensure consistent error response format
-6. **API documentation** — Generate OpenAPI spec from controllers
-7. **Database migration** — Generate Prisma migration from all schema changes
-8. **Performance audit** — Add database query pagination guardrails
-9. **Config validation** — Add startup config validation for required env vars
-
-### Files to Modify
-- `apps/api/src/app.module.ts` — Register all new modules
-- `apps/api/src/main.ts` — Add Swagger/OpenAPI
-- `apps/api/prisma/schema.prisma` — Final schema consolidation
-- Multiple service files — Add OpenSearch indexing hooks
-- Multiple service files — Add NATS event subscriptions
-
----
-
-## IMPLEMENTATION PRIORITY MATRIX
-
-| Phase | Modules | Effort | Dependencies |
-|-------|---------|--------|--------------|
-| **Phase A** | 1 (Workflow) + 4 (Connectors) | High | Foundation for all other modules |
-| **Phase B** | 2 (Discovery) + 3 (Classification) + 5 (Data Graph) | High | Connectors + Workflow |
-| **Phase C** | 6 (Risk) + 8 (Identity) + 9 (Shadow Data) | Medium | Discovery + Classification + Graph |
-| **Phase D** | 10 (Lineage) + 11 (Attack Paths) + 7 (Remediation) | Medium | Graph + Risk + Identity |
-| **Phase E** | 12 (Consent) + 13 (DSAR) + 14 (DPIA) + 15 (Retention) + 16 (RoPA) | Medium | Lineage + Graph |
-| **Phase F** | 17 (Compliance) + 18 (Third-Party) + 19 (Breach) + 20 (AI Governance) | Medium | All privacy modules |
-| **Phase G** | 21 (Dashboards) + 22 (DevOps) + 23 (QA) + 24 (Stabilization) | Medium | All modules complete |
-
----
-
-## NEW PRISMA MODELS SUMMARY
-
-| Model | Module | Table Name |
-|-------|--------|-----------|
-| WorkflowTask | 1 | workflow_tasks |
-| DataGraphNode | 5 | data_graph_nodes |
-| DataGraphEdge | 5 | data_graph_edges |
-| EntityRiskProfile | 6 | entity_risk_profiles |
-| RemediationAction | 7 | remediation_actions |
-| IdentityAccessMapping | 8 | identity_access_mappings |
-| ShadowDataAlert | 9 | shadow_data_alerts |
-| DataLineageRecord | 10 | data_lineage_records |
-| AttackPath | 11 | attack_paths |
-| DpiaTriggerRule | 14 | dpia_trigger_rules |
-| RetentionViolation | 15 | retention_violations |
-| DispositionCertificate | 15 | disposition_certificates |
-| ComplianceFramework | 17 | compliance_frameworks |
-| ControlGap | 17 | control_gaps |
-| BreachDetectionRule | 19 | breach_detection_rules |
-| AiSystem | 20 | ai_systems |
-| AiDatasetUsage | 20 | ai_dataset_usage |
-
-**Total new models: 17**
-**Total modified models: 14**
-**Total new modules: 8**
-**Total modified modules: 15**
-
----
-
-## RISKS AND ASSUMPTIONS
-
-1. **Temporal availability** — Workflow features degrade gracefully when Temporal is unavailable (existing pattern)
-2. **NATS availability** — Event triggers require NATS; fallback is manual triggering
-3. **OpenSearch availability** — Search features degrade to Prisma queries
-4. **Connector SDK** — New connectors require access credentials for testing; mocked in unit tests
-5. **Data graph performance** — PostgreSQL-based graph traversal may need query optimization for large tenants; consider materialized views
-6. **Attack path analysis** — Computationally intensive; should run as background workflow, not synchronous API
-7. **Migration ordering** — Schema changes must be applied before service code deploys
-8. **Backward compatibility** — All schema changes use nullable columns or new tables; no breaking changes
-9. **Test coverage** — New modules must have unit tests before merge; integration tests follow
-10. **Frontend parity** — Dashboard pages for new modules added in Phase G to avoid blocking backend work
+| Event | Publisher | Consumers |
+|-------|-----------|-----------|
+| `risk.prediction.generated` | Risk Intelligence | Co-Pilot, Adaptive Policies |
+| `risk.anomaly.detected` | Risk Intelligence | Threat Hunting, Incident Response |
+| `remediation.plan.generated` | Remediation Agent | Dashboard, Adaptive Policies |
+| `attack.simulation.completed` | Attack Simulation | Co-Pilot, Security Validation |
+| `threat.indicator.detected` | Threat Hunting | Incident Response, Adaptive Policies |
+| `policy.triggered` | Adaptive Policies | Observability, Audit |
+| `policy.executed` | Adaptive Policies | Observability, Audit |
+| `incident.classified` | Incident Response | Co-Pilot, Dashboard |
+| `incident.playbook.generated` | Incident Response | Dashboard |
+| `validation.run.completed` | Security Validation | Dashboard, Observability |
+| `optimization.recommended` | Platform Optimization | Observability |
+| `graph.enriched` | Knowledge Graph | Co-Pilot, Risk Intelligence |
+| `compliance.advice.generated` | Compliance Advisor | Dashboard |
+| `ai.risk.assessed` | AI Governance | Risk Intelligence, Compliance |

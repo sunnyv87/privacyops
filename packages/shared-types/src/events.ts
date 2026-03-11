@@ -109,6 +109,7 @@ export const EventTypes = {
 
   // Data Graph
   DATA_GRAPH_SYNCED: 'data_graph.synced',
+  DATA_GRAPH_ENRICHED: 'data_graph.enriched',
 
   // Retention Governance
   RETENTION_VIOLATION_DETECTED: 'retention.violation.detected',
@@ -117,4 +118,37 @@ export const EventTypes = {
   // Breach Detection
   BREACH_DETECTED: 'breach.detected',
   BREACH_NOTIFICATION_SENT: 'breach.notification.sent',
+
+  // AI Risk Intelligence (Module 2)
+  RISK_PREDICTION_GENERATED: 'risk.prediction.generated',
+  RISK_ANOMALY_DETECTED: 'risk.anomaly.detected',
+
+  // Autonomous Remediation (Module 3)
+  REMEDIATION_PLAN_GENERATED: 'remediation.plan.generated',
+
+  // Attack Simulation (Module 4)
+  ATTACK_SIMULATION_COMPLETED: 'attack.simulation.completed',
+
+  // Threat Hunting (Module 5)
+  THREAT_INDICATOR_DETECTED: 'threat.indicator.detected',
+
+  // AI Governance Intelligence (Module 6)
+  AI_RISK_ASSESSED: 'ai_governance.risk.assessed',
+
+  // Compliance Advisor (Module 9)
+  COMPLIANCE_ADVICE_GENERATED: 'compliance.advice.generated',
+
+  // Adaptive Policies (Module 10)
+  POLICY_TRIGGERED: 'policy.triggered',
+  POLICY_EXECUTED: 'policy.executed',
+
+  // Incident Response (Module 11)
+  INCIDENT_CLASSIFIED: 'incident.classified',
+  INCIDENT_PLAYBOOK_GENERATED: 'incident.playbook.generated',
+
+  // Security Validation (Module 12)
+  VALIDATION_RUN_COMPLETED: 'validation.run.completed',
+
+  // Platform Optimization (Module 14)
+  OPTIMIZATION_RECOMMENDED: 'optimization.recommended',
 } as const;

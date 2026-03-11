@@ -49,6 +49,14 @@ import { AttackPathsModule } from './modules/attack-paths/attack-paths.module';
 import { RemediationModule } from './modules/remediation/remediation.module';
 import { AiGovernanceModule } from './modules/ai-governance/ai-governance.module';
 
+// AI-Native Upgrade Modules (Modules 1, 5, 10, 12, 13, 14)
+import { CoPilotModule } from './modules/co-pilot/co-pilot.module';
+import { ThreatHuntingModule } from './modules/threat-hunting/threat-hunting.module';
+import { AdaptivePoliciesModule } from './modules/adaptive-policies/adaptive-policies.module';
+import { SecurityValidationModule } from './modules/security-validation/security-validation.module';
+import { ObservabilityModule } from './modules/observability/observability.module';
+import { PlatformOptimizationModule } from './modules/platform-optimization/platform-optimization.module';
+
 @Module({
   imports: [
     // Configuration
@@ -95,6 +103,14 @@ import { AiGovernanceModule } from './modules/ai-governance/ai-governance.module
     AttackPathsModule,
     RemediationModule,
     AiGovernanceModule,
+
+    // AI-Native Upgrade Modules
+    CoPilotModule,
+    ThreatHuntingModule,
+    AdaptivePoliciesModule,
+    SecurityValidationModule,
+    ObservabilityModule,
+    PlatformOptimizationModule,
   ],
   providers: [
     // Global guards (applied in order)

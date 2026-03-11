@@ -547,6 +547,11 @@ model Incident {
   dataSubjectNotified     Boolean   @default(false) @map("data_subject_notified")
   linkedAttackPathId      String?   @map("linked_attack_path_id") @db.Uuid
   linkedLineageIds        Json?     @map("linked_lineage_ids")
+  // Module 11: AI-Driven Incident Response additions
+  aiClassification        String?   @map("ai_classification") @db.VarChar(100)
+  aiSeverityScore         Decimal?  @map("ai_severity_score") @db.Decimal(5, 2)
+  containmentStatus       String?   @map("containment_status") @db.VarChar(50) // uncontained, partially_contained, contained
+  playbookGenerated       Boolean   @default(false) @map("playbook_generated")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
   deletedAt               DateTime? @map("deleted_at")
@@ -1069,6 +1074,11 @@ model EntityRiskProfile {
   riskFactors    Json     @map("risk_factors")
   lastCalculated DateTime @map("last_calculated")
   trend          String?  @db.VarChar(20) // increasing, stable, decreasing
+  // Module 2: AI Risk Intelligence additions
+  predictedScore    Decimal? @map("predicted_score") @db.Decimal(5, 2)
+  predictionDrivers Json?    @map("prediction_drivers")
+  trendDirection    String?  @map("trend_direction") @db.VarChar(20) // increasing, decreasing, stable
+  anomalyCount      Int      @default(0) @map("anomaly_count")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
@@ -1092,6 +1102,10 @@ model RemediationAction {
   rollbackData     Json?     @map("rollback_data")
   result           Json?
   validationResult Json?     @map("validation_result")
+  // Module 3: Autonomous Remediation Agent additions
+  planId           String?   @map("plan_id") @db.Uuid
+  aiGenerated      Boolean   @default(false) @map("ai_generated")
+  safetyScore      Decimal?  @map("safety_score") @db.Decimal(3, 2)
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -1342,10 +1356,18 @@ model AiSystem {
   purpose          String?   @db.Text
   regulatoryBasis  Json?     @map("regulatory_basis") // [{regulation, article, compliance_status}]
   lastAuditedAt    DateTime? @map("last_audited_at")
+  // Module 6: AI Governance Intelligence additions
+  lineageTracked     Boolean   @default(false) @map("lineage_tracked")
+  lastRiskAssessment DateTime? @map("last_risk_assessment")
+  regulatoryStatus   String?   @map("regulatory_status") @db.VarChar(50) // compliant, non_compliant, under_review, exempt
+  dataCategories     Json?     @map("data_categories")
+  vendor             String?   @db.VarChar(255)
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  datasetUsages AiDatasetUsage[]
+  datasetUsages    AiDatasetUsage[]
+  modelLineages    AiModelLineage[]
+  riskAssessments  AiRiskAssessment[]
 
   @@index([tenantId])
   @@index([riskCategory])
@@ -1372,4 +1394,544 @@ model AiDatasetUsage {
   @@index([aiSystemId])
   @@index([assetId])
   @@map("ai_dataset_usage")
+}
+
+// ============================================================================
+// MODULE 1: AI Security Co-Pilot
+// ============================================================================
+
+model CoPilotConversation {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  sessionId      String   @map("session_id") @db.VarChar(100)
+  query          String   @db.Text
+  intent         String   @db.VarChar(100)
+  queryPlan      Json     @map("query_plan")
+  contextSummary Json     @map("context_summary")
+  response       String   @db.Text
+  responseTokens Int      @map("response_tokens")
+  latencyMs      Int      @map("latency_ms")
+  feedback       String?  @db.VarChar(20) // thumbs_up, thumbs_down
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, userId])
+  @@index([tenantId, sessionId])
+  @@index([tenantId, intent])
+  @@map("copilot_conversations")
+}
+
+// ============================================================================
+// MODULE 2: AI Risk Intelligence Engine
+// ============================================================================
+
+model RiskPrediction {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  entityType     String   @map("entity_type") @db.VarChar(50)
+  entityId       String   @map("entity_id") @db.Uuid
+  currentScore   Decimal  @map("current_score") @db.Decimal(5, 2)
+  predictedScore Decimal  @map("predicted_score") @db.Decimal(5, 2)
+  predictedDate  DateTime @map("predicted_date")
+  confidence     Decimal  @db.Decimal(3, 2)
+  drivers        Json
+  status         String   @default("active") @db.VarChar(20) // active, expired, superseded
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, status])
+  @@map("risk_predictions")
+}
+
+model RiskAnomaly {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  entityType    String    @map("entity_type") @db.VarChar(50)
+  entityId      String    @map("entity_id") @db.Uuid
+  anomalyType   String    @map("anomaly_type") @db.VarChar(50) // score_spike, pattern_shift, new_exposure, access_surge
+  severity      String    @db.VarChar(20)
+  description   String    @db.Text
+  baselineValue Decimal   @map("baseline_value") @db.Decimal(10, 2)
+  observedValue Decimal   @map("observed_value") @db.Decimal(10, 2)
+  deviation     Decimal   @db.Decimal(10, 2)
+  detectedAt    DateTime  @default(now()) @map("detected_at")
+  status        String    @default("open") @db.VarChar(20) // open, acknowledged, resolved, dismissed
+  resolvedAt    DateTime? @map("resolved_at")
+
+  @@index([tenantId, status])
+  @@index([tenantId, entityType])
+  @@map("risk_anomalies")
+}
+
+// ============================================================================
+// MODULE 3: Autonomous Remediation Agent
+// ============================================================================
+
+model RemediationPlan {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  findingId       String    @map("finding_id") @db.Uuid
+  planType        String    @map("plan_type") @db.VarChar(50) // auto_generated, ai_suggested, manual
+  steps           Json
+  riskAssessment  Json      @map("risk_assessment")
+  estimatedImpact Json      @map("estimated_impact")
+  confidence      Decimal   @db.Decimal(3, 2)
+  status          String    @default("proposed") @db.VarChar(50) // proposed, approved, executing, completed, failed, rejected
+  approvedBy      String?   @map("approved_by") @db.Uuid
+  approvedAt      DateTime? @map("approved_at")
+  executionLog    Json?     @map("execution_log")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+
+  @@index([tenantId, findingId])
+  @@index([tenantId, status])
+  @@map("remediation_plans")
+}
+
+// ============================================================================
+// MODULE 4: AI Attack Simulation Engine
+// ============================================================================
+
+model AttackSimulation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  scenarioType    String    @map("scenario_type") @db.VarChar(50) // identity_compromise, privilege_escalation, data_exfiltration, lateral_movement
+  scenarioConfig  Json      @map("scenario_config")
+  status          String    @default("pending") @db.VarChar(50)
+  results         Json?
+  pathsFound      Int       @default(0) @map("paths_found")
+  maxRiskScore    Decimal   @default(0) @map("max_risk_score") @db.Decimal(5, 2)
+  executionTimeMs Int?      @map("execution_time_ms")
+  scheduledBy     String    @map("scheduled_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+
+  simulatedPaths SimulatedAttackPath[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, scenarioType])
+  @@map("attack_simulations")
+}
+
+model SimulatedAttackPath {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  simulationId   String   @map("simulation_id") @db.Uuid
+  entryPoint     Json     @map("entry_point")
+  pathSteps      Json     @map("path_steps")
+  targetAsset    Json     @map("target_asset")
+  riskScore      Decimal  @map("risk_score") @db.Decimal(5, 2)
+  exploitability String   @db.VarChar(20) // easy, moderate, difficult
+  impact         String   @db.VarChar(20)
+  mitigations    Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  simulation AttackSimulation @relation(fields: [simulationId], references: [id])
+
+  @@index([tenantId, simulationId])
+  @@index([tenantId, riskScore])
+  @@map("simulated_attack_paths")
+}
+
+// ============================================================================
+// MODULE 5: Data Exposure Threat Hunting Engine
+// ============================================================================
+
+model ThreatHunt {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  huntType      String    @map("hunt_type") @db.VarChar(50) // abnormal_access, suspicious_export, credential_misuse, shadow_ai, data_hoarding
+  status        String    @default("active") @db.VarChar(20) // active, completed, archived
+  query         Json
+  findings      Json?
+  findingsCount Int       @default(0) @map("findings_count")
+  scheduledBy   String?   @map("scheduled_by") @db.Uuid
+  startedAt     DateTime  @default(now()) @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+
+  @@index([tenantId, huntType])
+  @@index([tenantId, status])
+  @@map("threat_hunts")
+}
+
+model ThreatIndicator {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  indicatorType  String    @map("indicator_type") @db.VarChar(50) // access_anomaly, export_spike, credential_abuse, shadow_ai_usage, permission_escalation
+  entityType     String    @map("entity_type") @db.VarChar(50)
+  entityId       String    @map("entity_id") @db.Uuid
+  severity       String    @db.VarChar(20)
+  confidence     Decimal   @db.Decimal(3, 2)
+  evidence       Json
+  status         String    @default("open") @db.VarChar(20) // open, investigating, confirmed, false_positive, resolved
+  correlatedWith Json?     @map("correlated_with") // array of indicator IDs
+  detectedAt     DateTime  @default(now()) @map("detected_at")
+  resolvedAt     DateTime? @map("resolved_at")
+
+  @@index([tenantId, status, severity])
+  @@index([tenantId, entityType, entityId])
+  @@map("threat_indicators")
+}
+
+model AccessBaseline {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  entityType   String   @map("entity_type") @db.VarChar(50)
+  entityId     String   @map("entity_id") @db.Uuid
+  baselineData Json     @map("baseline_data")
+  calculatedAt DateTime @default(now()) @map("calculated_at")
+  validUntil   DateTime @map("valid_until")
+
+  @@unique([tenantId, entityType, entityId])
+  @@map("access_baselines")
+}
+
+// ============================================================================
+// MODULE 6: AI Governance Intelligence
+// ============================================================================
+
+model AiModelLineage {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  aiSystemId        String    @map("ai_system_id") @db.Uuid
+  version           String    @db.VarChar(100)
+  parentModelId     String?   @map("parent_model_id") @db.Uuid
+  trainingDatasets  Json      @map("training_datasets")
+  trainingConfig    Json?     @map("training_config")
+  evaluationMetrics Json?     @map("evaluation_metrics")
+  deploymentStatus  String    @default("development") @map("deployment_status") @db.VarChar(50)
+  deployedAt        DateTime? @map("deployed_at")
+  retiredAt         DateTime? @map("retired_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  aiSystem AiSystem @relation(fields: [aiSystemId], references: [id])
+
+  @@index([tenantId, aiSystemId])
+  @@index([tenantId, deploymentStatus])
+  @@map("ai_model_lineages")
+}
+
+model AiRiskAssessment {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String    @map("tenant_id") @db.Uuid
+  aiSystemId           String    @map("ai_system_id") @db.Uuid
+  assessmentType       String    @map("assessment_type") @db.VarChar(50) // automated, manual, regulatory
+  riskCategory         String    @map("risk_category") @db.VarChar(50)
+  riskFactors          Json      @map("risk_factors")
+  regulatoryMapping    Json      @map("regulatory_mapping")
+  dataProtectionImpact Json      @map("data_protection_impact")
+  overallScore         Decimal   @map("overall_score") @db.Decimal(5, 2)
+  recommendations      Json
+  assessedAt           DateTime  @default(now()) @map("assessed_at")
+  nextReviewDate       DateTime? @map("next_review_date")
+
+  aiSystem AiSystem @relation(fields: [aiSystemId], references: [id])
+
+  @@index([tenantId, aiSystemId])
+  @@index([tenantId, riskCategory])
+  @@map("ai_risk_assessments")
+}
+
+// ============================================================================
+// MODULE 7: Predictive Data Risk Engine
+// ============================================================================
+
+model RiskForecast {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  forecastType    String   @map("forecast_type") @db.VarChar(50) // shadow_data_growth, vendor_exposure, access_risk, governance_gap
+  timeHorizon     String   @map("time_horizon") @db.VarChar(10) // 30d, 60d, 90d
+  currentValue    Decimal  @map("current_value") @db.Decimal(10, 2)
+  forecastedValue Decimal  @map("forecasted_value") @db.Decimal(10, 2)
+  confidence      Decimal  @db.Decimal(3, 2)
+  trend           String   @db.VarChar(20) // accelerating, linear, decelerating, stable
+  riskFactors     Json     @map("risk_factors")
+  recommendations Json
+  generatedAt     DateTime @default(now()) @map("generated_at")
+  expiresAt       DateTime @map("expires_at")
+
+  @@index([tenantId, forecastType])
+  @@index([tenantId, expiresAt])
+  @@map("risk_forecasts")
+}
+
+// ============================================================================
+// MODULE 8: Security Knowledge Graph Expansion
+// ============================================================================
+
+model GraphAnalyticsResult {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  analysisType String   @map("analysis_type") @db.VarChar(50) // centrality, clustering, risk_propagation, impact_radius
+  parameters   Json
+  results      Json
+  nodeCount    Int      @map("node_count")
+  edgeCount    Int      @map("edge_count")
+  computedAt   DateTime @default(now()) @map("computed_at")
+
+  @@index([tenantId, analysisType])
+  @@map("graph_analytics_results")
+}
+
+// ============================================================================
+// MODULE 9: AI-Driven Compliance Advisor
+// ============================================================================
+
+model ComplianceAdvice {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  regulationId  String?  @map("regulation_id") @db.Uuid
+  adviceType    String   @map("advice_type") @db.VarChar(50) // gap_remediation, control_recommendation, evidence_suggestion, interpretation
+  context       Json
+  advice        String   @db.Text
+  citations     Json
+  confidence    Decimal  @db.Decimal(3, 2)
+  status        String   @default("active") @db.VarChar(20) // active, applied, dismissed
+  appliedActions Json?   @map("applied_actions")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, adviceType])
+  @@index([tenantId, regulationId])
+  @@map("compliance_advice")
+}
+
+model ControlMapping {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  sourceFramework String    @map("source_framework") @db.VarChar(100)
+  sourceControlId String    @map("source_control_id") @db.Uuid
+  targetFramework String    @map("target_framework") @db.VarChar(100)
+  targetControlId String    @map("target_control_id") @db.Uuid
+  mappingType     String    @map("mapping_type") @db.VarChar(20) // exact, partial, related
+  confidence      Decimal   @db.Decimal(3, 2)
+  aiGenerated     Boolean   @default(false) @map("ai_generated")
+  verifiedBy      String?   @map("verified_by") @db.Uuid
+  verifiedAt      DateTime? @map("verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, sourceFramework, sourceControlId, targetFramework, targetControlId])
+  @@index([tenantId, sourceFramework])
+  @@map("control_mappings")
+}
+
+// ============================================================================
+// MODULE 10: Adaptive Data Protection Policies
+// ============================================================================
+
+model AdaptivePolicy {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  name              String    @db.VarChar(255)
+  policyType        String    @map("policy_type") @db.VarChar(50) // access_control, encryption, retention, classification, monitoring
+  triggerConditions Json      @map("trigger_conditions")
+  actions           Json
+  currentState      String    @default("inactive") @map("current_state") @db.VarChar(20)
+  lastTriggeredAt   DateTime? @map("last_triggered_at")
+  lastEvaluatedAt   DateTime? @map("last_evaluated_at")
+  triggerCount      Int       @default(0) @map("trigger_count")
+  isEnabled         Boolean   @default(true) @map("is_enabled")
+  cooldownMinutes   Int       @default(60) @map("cooldown_minutes")
+  requiresApproval  Boolean   @default(true) @map("requires_approval")
+  createdBy         String    @map("created_by") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  executions PolicyExecution[]
+
+  @@index([tenantId, policyType])
+  @@index([tenantId, isEnabled])
+  @@map("adaptive_policies")
+}
+
+model PolicyExecution {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  policyId        String    @map("policy_id") @db.Uuid
+  triggerSignals  Json      @map("trigger_signals")
+  actionsExecuted Json      @map("actions_executed")
+  status          String    @default("pending") @db.VarChar(20) // pending, approved, executing, completed, failed, rejected
+  approvedBy      String?   @map("approved_by") @db.Uuid
+  approvedAt      DateTime? @map("approved_at")
+  executedAt      DateTime? @map("executed_at")
+  completedAt     DateTime? @map("completed_at")
+  rollbackData    Json?     @map("rollback_data")
+
+  policy AdaptivePolicy @relation(fields: [policyId], references: [id])
+
+  @@index([tenantId, policyId])
+  @@index([tenantId, status])
+  @@map("policy_executions")
+}
+
+// ============================================================================
+// MODULE 11: AI-Driven Incident Response
+// ============================================================================
+
+model IncidentPlaybook {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  incidentId    String    @map("incident_id") @db.Uuid
+  playbookType  String    @map("playbook_type") @db.VarChar(50) // containment, investigation, notification, recovery
+  steps         Json
+  aiGenerated   Boolean   @default(true) @map("ai_generated")
+  status        String    @default("proposed") @db.VarChar(20)
+  approvedBy    String?   @map("approved_by") @db.Uuid
+  approvedAt    DateTime? @map("approved_at")
+  startedAt     DateTime? @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, incidentId])
+  @@index([tenantId, status])
+  @@map("incident_playbooks")
+}
+
+model IncidentImpactAnalysis {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  incidentId            String   @map("incident_id") @db.Uuid
+  affectedAssetCount    Int      @map("affected_asset_count")
+  affectedSubjectCount  Int      @map("affected_subject_count")
+  affectedVendorCount   Int      @map("affected_vendor_count")
+  dataCategories        Json     @map("data_categories")
+  jurisdictions         Json
+  regulatoryImpact      Json     @map("regulatory_impact")
+  businessImpact        Json     @map("business_impact")
+  containmentStatus     String   @default("uncontained") @map("containment_status") @db.VarChar(50)
+  analyzedAt            DateTime @default(now()) @map("analyzed_at")
+
+  @@index([tenantId, incidentId])
+  @@map("incident_impact_analyses")
+}
+
+// ============================================================================
+// MODULE 12: Continuous Data Security Validation
+// ============================================================================
+
+model ValidationRun {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  runType      String    @map("run_type") @db.VarChar(50) // full, access_control, remediation_verify, attack_surface, compliance
+  status       String    @default("pending") @db.VarChar(20)
+  testsTotal   Int       @default(0) @map("tests_total")
+  testsPassed  Int       @default(0) @map("tests_passed")
+  testsFailed  Int       @default(0) @map("tests_failed")
+  testsSkipped Int       @default(0) @map("tests_skipped")
+  postureScore Decimal?  @map("posture_score") @db.Decimal(5, 2)
+  findings     Json?
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, runType])
+  @@index([tenantId, status])
+  @@map("validation_runs")
+}
+
+model ValidationTest {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  testName     String    @map("test_name") @db.VarChar(255)
+  testCategory String    @map("test_category") @db.VarChar(50) // access_control, encryption, retention, classification, network
+  testLogic    Json      @map("test_logic")
+  isEnabled    Boolean   @default(true) @map("is_enabled")
+  lastResult   String?   @map("last_result") @db.VarChar(20) // pass, fail, skip
+  lastRunAt    DateTime? @map("last_run_at")
+  failCount    Int       @default(0) @map("fail_count")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@unique([tenantId, testName])
+  @@index([tenantId, testCategory])
+  @@map("validation_tests")
+}
+
+// ============================================================================
+// MODULE 13: Platform Observability & Telemetry
+// ============================================================================
+
+model ServiceMetric {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String?  @map("tenant_id") @db.Uuid
+  serviceName String   @map("service_name") @db.VarChar(100)
+  metricName  String   @map("metric_name") @db.VarChar(100)
+  metricValue Decimal  @map("metric_value") @db.Decimal(12, 4)
+  tags        Json?
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+
+  @@index([serviceName, metricName, recordedAt])
+  @@index([tenantId, serviceName])
+  @@map("service_metrics")
+}
+
+model ConnectorHealthLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  dataSourceId   String   @map("data_source_id") @db.Uuid
+  healthStatus   String   @map("health_status") @db.VarChar(20) // healthy, degraded, unhealthy, unreachable
+  responseTimeMs Int?     @map("response_time_ms")
+  errorMessage   String?  @map("error_message") @db.Text
+  checksPerformed Json    @map("checks_performed")
+  checkedAt      DateTime @default(now()) @map("checked_at")
+
+  @@index([tenantId, dataSourceId])
+  @@index([tenantId, healthStatus])
+  @@map("connector_health_logs")
+}
+
+model PlatformAlert {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String?   @map("tenant_id") @db.Uuid
+  alertType      String    @map("alert_type") @db.VarChar(50)
+  severity       String    @db.VarChar(20) // critical, warning, info
+  source         String    @db.VarChar(100)
+  message        String    @db.Text
+  metadata       Json?
+  status         String    @default("active") @db.VarChar(20) // active, acknowledged, resolved
+  acknowledgedBy String?   @map("acknowledged_by") @db.Uuid
+  resolvedAt     DateTime? @map("resolved_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([status, severity])
+  @@index([tenantId, alertType])
+  @@map("platform_alerts")
+}
+
+// ============================================================================
+// MODULE 14: Autonomous Platform Optimization
+// ============================================================================
+
+model OptimizationRecommendation {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String?   @map("tenant_id") @db.Uuid
+  category            String    @db.VarChar(50) // query_performance, resource_usage, risk_scoring, scan_efficiency, index_suggestion
+  target              String    @db.VarChar(255)
+  description         String    @db.Text
+  currentMetric       Json      @map("current_metric")
+  expectedImprovement Json      @map("expected_improvement")
+  implementation      Json
+  priority            String    @db.VarChar(20)
+  status              String    @default("proposed") @db.VarChar(20)
+  appliedAt           DateTime? @map("applied_at")
+  appliedBy           String?   @map("applied_by") @db.Uuid
+  result              Json?
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, category])
+  @@index([status, priority])
+  @@map("optimization_recommendations")
+}
+
+model PerformanceBaseline {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  serviceName         String   @map("service_name") @db.VarChar(100)
+  operationName       String   @map("operation_name") @db.VarChar(255)
+  baselineLatencyMs   Decimal  @map("baseline_latency_ms") @db.Decimal(10, 2)
+  baselineThroughput  Decimal  @map("baseline_throughput") @db.Decimal(10, 2)
+  baselineErrorRate   Decimal  @map("baseline_error_rate") @db.Decimal(5, 4)
+  sampleSize          Int      @map("sample_size")
+  calculatedAt        DateTime @default(now()) @map("calculated_at")
+  validUntil          DateTime @map("valid_until")
+
+  @@unique([serviceName, operationName])
+  @@map("performance_baselines")
 }

@@ -226,4 +226,117 @@ export class DashboardService {
       };
     });
   }
+
+  // ========================================================================
+  // Module 21: Extended Dashboard Views
+  // ========================================================================
+
+  async getShadowDataSummary(tenantId: string) {
+    const [totalShadowAssets, alertsByType, alertsByStatus] = await Promise.all([
+      this.prisma.asset.count({
+        where: { tenantId, deletedAt: null, isShadowData: true },
+      }),
+      this.prisma.shadowDataAlert.groupBy({
+        by: ['alertType'],
+        where: { tenantId },
+        _count: { id: true },
+      }),
+      this.prisma.shadowDataAlert.groupBy({
+        by: ['status'],
+        where: { tenantId },
+        _count: { id: true },
+      }),
+    ]);
+
+    return {
+      totalShadowAssets,
+      alertsByType: alertsByType.map((a) => ({ type: a.alertType, count: a._count.id })),
+      alertsByStatus: alertsByStatus.map((a) => ({ status: a.status, count: a._count.id })),
+    };
+  }
+
+  async getIdentityAccessOverview(tenantId: string) {
+    const [totalMappings, byType, excessiveCount, inactiveCount] = await Promise.all([
+      this.prisma.identityAccessMapping.count({ where: { tenantId } }),
+      this.prisma.identityAccessMapping.groupBy({
+        by: ['identityType'],
+        where: { tenantId },
+        _count: { id: true },
+      }),
+      this.prisma.identityAccessMapping.count({
+        where: { tenantId, isExcessive: true },
+      }),
+      this.prisma.identityAccessMapping.count({
+        where: { tenantId, isInactive: true },
+      }),
+    ]);
+
+    return {
+      totalMappings,
+      byType: byType.map((t) => ({ type: t.identityType, count: t._count.id })),
+      excessiveCount,
+      inactiveCount,
+    };
+  }
+
+  async getAttackPathSummary(tenantId: string) {
+    const [total, bySeverity, byStatus] = await Promise.all([
+      this.prisma.attackPath.count({ where: { tenantId } }),
+      this.prisma.attackPath.groupBy({
+        by: ['severity'],
+        where: { tenantId, status: 'active' },
+        _count: { id: true },
+      }),
+      this.prisma.attackPath.groupBy({
+        by: ['status'],
+        where: { tenantId },
+        _count: { id: true },
+      }),
+    ]);
+
+    return {
+      total,
+      activeBySeverity: bySeverity.map((s) => ({ severity: s.severity, count: s._count.id })),
+      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
+    };
+  }
+
+  async getDataRiskHeatmap(tenantId: string) {
+    const profiles = await this.prisma.entityRiskProfile.findMany({
+      where: { tenantId, entityType: 'asset' },
+      orderBy: { compositeScore: 'desc' },
+      take: 50,
+    });
+
+    return profiles.map((p) => ({
+      entityId: p.entityId,
+      entityType: p.entityType,
+      score: p.compositeScore,
+      trend: p.trend,
+    }));
+  }
+
+  async getAiGovernanceOverview(tenantId: string) {
+    const [totalSystems, byRiskCategory, byStatus, datasetUsageCount] = await Promise.all([
+      this.prisma.aiSystem.count({ where: { tenantId } }),
+      this.prisma.aiSystem.groupBy({
+        by: ['riskCategory'],
+        where: { tenantId },
+        _count: { id: true },
+      }),
+      this.prisma.aiSystem.groupBy({
+        by: ['status'],
+        where: { tenantId },
+        _count: { id: true },
+      }),
+      this.prisma.aiDatasetUsage.count({ where: { tenantId, isActive: true } }),
+    ]);
+
+    return {
+      totalSystems,
+      byRiskCategory: byRiskCategory.map((r) => ({ category: r.riskCategory, count: r._count.id })),
+      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
+      activeDatasetUsages: datasetUsageCount,
+    };
+  }
 }

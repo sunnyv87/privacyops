@@ -119,6 +119,63 @@ export class DsarController {
   }
 
   // ---------------------------------------------------------------------------
+  // Data Discovery
+  // ---------------------------------------------------------------------------
+
+  @Post('requests/:id/discover')
+  @RequirePermissions('dsar:requests:update')
+  @ApiOperation({ summary: 'Discover subject data across data sources' })
+  async discoverSubjectData(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.dsarService.discoverSubjectData(tenantId, id);
+    return { data: result };
+  }
+
+  @Get('requests/:id/discovered-data')
+  @RequirePermissions('dsar:requests:read')
+  @ApiOperation({ summary: 'Get discovered data sources for a DSAR request' })
+  async getDiscoveredData(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const request = await this.dsarService.findById(tenantId, id);
+    return { data: request.discoveredDataSources || [] };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Response Package
+  // ---------------------------------------------------------------------------
+
+  @Post('requests/:id/generate-response')
+  @RequirePermissions('dsar:requests:update')
+  @ApiOperation({ summary: 'Generate response package for a DSAR request' })
+  async generateResponsePackage(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.dsarService.generateResponsePackage(tenantId, id);
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Verify Deletion
+  // ---------------------------------------------------------------------------
+
+  @Post('requests/:id/verify-deletion')
+  @RequirePermissions('dsar:requests:update')
+  @ApiOperation({ summary: 'Verify deletion of subject data' })
+  async verifyDeletion(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.dsarService.verifyDeletion(tenantId, id, userId);
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
   // Stats
   // ---------------------------------------------------------------------------
 

@@ -1,12 +1,23 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { ConnectorRegistry } from '@/modules/connectors/connector-registry';
-import { StartScanDto, ScanFilterDto } from './dto/discovery.dto';
+import { StartScanDto, ScanFilterDto, EnrichAssetMetadataDto } from './dto/discovery.dto';
+
+const AI_DATASET_PATTERNS = [
+  /training/i,
+  /model/i,
+  /dataset/i,
+  /\bml_/i,
+  /\bai_/i,
+  /embeddings/i,
+];
 
 @Injectable()
 export class DiscoveryService {
+  private readonly logger = new Logger(DiscoveryService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -247,5 +258,195 @@ export class DiscoveryService {
     });
     if (!asset) throw new NotFoundException(`Asset ${id} not found`);
     return asset;
+  }
+
+  async discoverShadowData(tenantId: string, dataSourceId: string) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 180);
+
+    // Find assets with fingerprints matching assets in other data sources
+    const allAssets = await this.prisma.asset.findMany({
+      where: { tenantId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        dataSourceId: true,
+        fingerprint: true,
+        ownerEmail: true,
+        ownerUserId: true,
+        lastScannedAt: true,
+      },
+    });
+
+    // Build fingerprint groups across data sources
+    const fingerprintMap = new Map<string, typeof allAssets>();
+    for (const asset of allAssets) {
+      if (asset.fingerprint) {
+        const group = fingerprintMap.get(asset.fingerprint) || [];
+        group.push(asset);
+        fingerprintMap.set(asset.fingerprint, group);
+      }
+    }
+
+    const shadowAssets: { id: string; name: string; dataSourceId: string; reason: string }[] = [];
+    const shadowAssetIds = new Set<string>();
+    let duplicateFingerprints = 0;
+    let unownedAssets = 0;
+    let staleAssets = 0;
+
+    for (const asset of allAssets) {
+      if (dataSourceId && asset.dataSourceId !== dataSourceId) continue;
+
+      const reasons: string[] = [];
+
+      // Check fingerprint duplicates across different data sources
+      if (asset.fingerprint) {
+        const group = fingerprintMap.get(asset.fingerprint) || [];
+        const crossSource = group.filter((a) => a.dataSourceId !== asset.dataSourceId);
+        if (crossSource.length > 0) {
+          reasons.push('duplicate_fingerprint_across_sources');
+          duplicateFingerprints++;
+        }
+      }
+
+      // Check for no owner
+      if (!asset.ownerEmail && !asset.ownerUserId) {
+        reasons.push('no_owner');
+        unownedAssets++;
+      }
+
+      // Check stale (not scanned in 180+ days)
+      if (!asset.lastScannedAt || asset.lastScannedAt < cutoffDate) {
+        reasons.push('stale_not_scanned_180_days');
+        staleAssets++;
+      }
+
+      if (reasons.length > 0) {
+        shadowAssets.push({
+          id: asset.id,
+          name: asset.name,
+          dataSourceId: asset.dataSourceId,
+          reason: reasons.join(', '),
+        });
+        shadowAssetIds.add(asset.id);
+      }
+    }
+
+    // Mark shadow data assets in bulk
+    if (shadowAssetIds.size > 0) {
+      await this.prisma.asset.updateMany({
+        where: { id: { in: Array.from(shadowAssetIds) }, tenantId },
+        data: { isShadowData: true },
+      });
+    }
+
+    this.logger.log(
+      `Shadow data discovery for tenant ${tenantId}: ${shadowAssets.length} shadow asset(s) found`,
+    );
+
+    return {
+      count: shadowAssets.length,
+      duplicateFingerprints,
+      unownedAssets,
+      staleAssets,
+      assets: shadowAssets,
+    };
+  }
+
+  async discoverAiDatasets(tenantId: string) {
+    const assets = await this.prisma.asset.findMany({
+      where: { tenantId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        path: true,
+        dataSourceId: true,
+        type: true,
+        sizeBytes: true,
+        lastScannedAt: true,
+      },
+    });
+
+    const aiAssets = assets.filter((asset) => {
+      const nameOrPath = `${asset.name} ${asset.path || ''}`;
+      return AI_DATASET_PATTERNS.some((pattern) => pattern.test(nameOrPath));
+    });
+
+    // Mark AI dataset assets in bulk
+    if (aiAssets.length > 0) {
+      await this.prisma.asset.updateMany({
+        where: { id: { in: aiAssets.map((a) => a.id) }, tenantId },
+        data: { isAiDataset: true },
+      });
+    }
+
+    this.logger.log(
+      `AI dataset discovery for tenant ${tenantId}: ${aiAssets.length} AI dataset(s) found`,
+    );
+
+    return aiAssets;
+  }
+
+  async enrichAssetMetadata(
+    tenantId: string,
+    assetId: string,
+    metadata: EnrichAssetMetadataDto,
+  ) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: assetId, tenantId, deletedAt: null },
+    });
+    if (!asset) throw new NotFoundException(`Asset ${assetId} not found`);
+
+    const updateData: any = {};
+    if (metadata.ownerEmail !== undefined) updateData.ownerEmail = metadata.ownerEmail;
+    if (metadata.encryptionStatus !== undefined) updateData.encryptionStatus = metadata.encryptionStatus;
+    if (metadata.storageLocation !== undefined) updateData.storageLocation = metadata.storageLocation;
+    if (metadata.accessPermissions !== undefined) updateData.accessPermissions = metadata.accessPermissions;
+
+    const updated = await this.prisma.asset.update({
+      where: { id: assetId },
+      data: updateData,
+    });
+
+    this.logger.log(`Asset ${assetId} metadata enriched for tenant ${tenantId}`);
+
+    return updated;
+  }
+
+  async detectDuplicates(tenantId: string) {
+    const assets = await this.prisma.asset.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        fingerprint: { not: null },
+      },
+      select: {
+        id: true,
+        name: true,
+        dataSourceId: true,
+        fingerprint: true,
+        path: true,
+        sizeBytes: true,
+      },
+    });
+
+    // Group by fingerprint
+    const groups = new Map<string, typeof assets>();
+    for (const asset of assets) {
+      const fp = asset.fingerprint!;
+      const group = groups.get(fp) || [];
+      group.push(asset);
+      groups.set(fp, group);
+    }
+
+    // Return only groups with duplicates (count > 1)
+    const duplicateGroups: { fingerprint: string; count: number; assets: typeof assets }[] = [];
+    for (const [fingerprint, group] of groups) {
+      if (group.length > 1) {
+        duplicateGroups.push({ fingerprint, count: group.length, assets: group });
+      }
+    }
+
+    return duplicateGroups;
   }
 }

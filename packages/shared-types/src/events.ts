@@ -68,4 +68,53 @@ export const EventTypes = {
   // Vendor
   VENDOR_ASSESSMENT_DUE: 'vendor.assessment.due',
   VENDOR_RISK_CHANGED: 'vendor.risk.changed',
+
+  // Approval Workflows
+  APPROVAL_REQUESTED: 'approval.requested',
+  APPROVAL_APPROVED: 'approval.approved',
+  APPROVAL_REJECTED: 'approval.rejected',
+
+  // Assessments / DPIA
+  ASSESSMENT_SUBMITTED: 'assessment.submitted',
+  ASSESSMENT_APPROVED: 'assessment.approved',
+  ASSESSMENT_REJECTED: 'assessment.rejected',
+
+  // Remediation
+  REMEDIATION_PROPOSED: 'remediation.proposed',
+  REMEDIATION_APPROVED: 'remediation.approved',
+  REMEDIATION_EXECUTED: 'remediation.executed',
+  REMEDIATION_ROLLED_BACK: 'remediation.rolled_back',
+  REMEDIATION_FAILED: 'remediation.failed',
+
+  // Shadow Data
+  SHADOW_DATA_DETECTED: 'shadow_data.detected',
+  SHADOW_DATA_RESOLVED: 'shadow_data.resolved',
+
+  // Attack Paths
+  ATTACK_PATH_DETECTED: 'attack_path.detected',
+  ATTACK_PATH_MITIGATED: 'attack_path.mitigated',
+
+  // Data Lineage
+  LINEAGE_RECORD_CREATED: 'lineage.record.created',
+  LINEAGE_BREACH_IMPACT_ANALYZED: 'lineage.breach_impact.analyzed',
+
+  // Identity Access
+  IDENTITY_ACCESS_ANOMALY_DETECTED: 'identity_access.anomaly.detected',
+  IDENTITY_ACCESS_EXCESSIVE: 'identity_access.excessive',
+
+  // AI Governance
+  AI_SYSTEM_REGISTERED: 'ai_governance.system.registered',
+  AI_DATASET_USAGE_RECORDED: 'ai_governance.dataset_usage.recorded',
+  AI_COMPLIANCE_VIOLATION: 'ai_governance.compliance.violation',
+
+  // Data Graph
+  DATA_GRAPH_SYNCED: 'data_graph.synced',
+
+  // Retention Governance
+  RETENTION_VIOLATION_DETECTED: 'retention.violation.detected',
+  RETENTION_DISPOSITION_CERTIFIED: 'retention.disposition.certified',
+
+  // Breach Detection
+  BREACH_DETECTED: 'breach.detected',
+  BREACH_NOTIFICATION_SENT: 'breach.notification.sent',
 } as const;

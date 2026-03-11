@@ -61,4 +61,44 @@ export class DashboardController {
     const overview = await this.dashboardService.getComplianceOverview(tenantId);
     return { data: overview };
   }
+
+  @Get('shadow-data')
+  @RequirePermissions('dashboard:risk:read')
+  @ApiOperation({ summary: 'Get shadow data dashboard summary' })
+  async getShadowDataSummary(@CurrentUser('tenantId') tenantId: string) {
+    const summary = await this.dashboardService.getShadowDataSummary(tenantId);
+    return { data: summary };
+  }
+
+  @Get('identity-access')
+  @RequirePermissions('dashboard:risk:read')
+  @ApiOperation({ summary: 'Get identity access overview' })
+  async getIdentityAccessOverview(@CurrentUser('tenantId') tenantId: string) {
+    const overview = await this.dashboardService.getIdentityAccessOverview(tenantId);
+    return { data: overview };
+  }
+
+  @Get('attack-paths')
+  @RequirePermissions('dashboard:risk:read')
+  @ApiOperation({ summary: 'Get attack path summary' })
+  async getAttackPathSummary(@CurrentUser('tenantId') tenantId: string) {
+    const summary = await this.dashboardService.getAttackPathSummary(tenantId);
+    return { data: summary };
+  }
+
+  @Get('data-risk')
+  @RequirePermissions('dashboard:risk:read')
+  @ApiOperation({ summary: 'Get data risk heatmap data' })
+  async getDataRiskHeatmap(@CurrentUser('tenantId') tenantId: string) {
+    const heatmap = await this.dashboardService.getDataRiskHeatmap(tenantId);
+    return { data: heatmap };
+  }
+
+  @Get('ai-governance')
+  @RequirePermissions('dashboard:risk:read')
+  @ApiOperation({ summary: 'Get AI governance overview' })
+  async getAiGovernanceOverview(@CurrentUser('tenantId') tenantId: string) {
+    const overview = await this.dashboardService.getAiGovernanceOverview(tenantId);
+    return { data: overview };
+  }
 }

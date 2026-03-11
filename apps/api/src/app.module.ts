@@ -22,7 +22,7 @@ import { PermissionsGuard } from './core/auth/guards/permissions.guard';
 // Interceptors
 import { FieldMaskInterceptor } from './core/auth/interceptors/field-mask.interceptor';
 
-// Feature modules
+// Feature modules (existing)
 import { ConnectorsModule } from './modules/connectors/connectors.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { ClassificationModule } from './modules/classification/classification.module';
@@ -39,6 +39,15 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { UsersModule } from './modules/users/users.module';
 import { ScimModule } from './modules/scim/scim.module';
 import { HealthModule } from './core/health/health.module';
+
+// Feature modules (new — Modules 5-11, 20)
+import { DataGraphModule } from './modules/data-graph/data-graph.module';
+import { IdentityAccessModule } from './modules/identity-access/identity-access.module';
+import { ShadowDataModule } from './modules/shadow-data/shadow-data.module';
+import { LineageModule } from './modules/lineage/lineage.module';
+import { AttackPathsModule } from './modules/attack-paths/attack-paths.module';
+import { RemediationModule } from './modules/remediation/remediation.module';
+import { AiGovernanceModule } from './modules/ai-governance/ai-governance.module';
 
 @Module({
   imports: [
@@ -61,7 +70,7 @@ import { HealthModule } from './core/health/health.module';
     SecurityEventsModule,
     HealthModule,
 
-    // Feature modules
+    // Feature modules (existing — upgraded)
     UsersModule,
     ScimModule,
     ConnectorsModule,
@@ -77,6 +86,15 @@ import { HealthModule } from './core/health/health.module';
     ComplianceModule,
     RopaModule,
     DashboardModule,
+
+    // Feature modules (new)
+    DataGraphModule,
+    IdentityAccessModule,
+    ShadowDataModule,
+    LineageModule,
+    AttackPathsModule,
+    RemediationModule,
+    AiGovernanceModule,
   ],
   providers: [
     // Global guards (applied in order)

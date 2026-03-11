@@ -338,6 +338,219 @@ export class DspmService {
     };
   }
 
+  async calculateEntityRisk(
+    tenantId: string,
+    entityType: string,
+    entityId: string,
+  ) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: entityId, tenantId, deletedAt: null },
+      include: {
+        classifications: { include: { label: true } },
+        fields: true,
+        dataSource: true,
+      },
+    });
+
+    if (!asset) {
+      throw new NotFoundException(`Asset ${entityId} not found`);
+    }
+
+    const metadata = (asset.metadata as Record<string, any>) || {};
+
+    // Compute all scoring dimensions
+    const vendorScore = this.riskScorer.vendorExposureScore({
+      vendorCount: metadata.vendorCount ?? 0,
+      highRiskVendors: metadata.highRiskVendors ?? 0,
+      dataSharedTypes: metadata.dataSharedTypes ?? 0,
+    });
+
+    const aiScore = this.riskScorer.aiUsageScore({
+      isAiDataset: metadata.isAiDataset ?? false,
+      hasConsent: metadata.hasAiConsent ?? false,
+      modelCount: metadata.modelCount ?? 0,
+    });
+
+    const identityScore = this.riskScorer.identityAccessScore({
+      principalCount: metadata.principalCount ?? 1,
+      publicAccess: metadata.isPubliclyAccessible ?? false,
+      excessivePermissions: metadata.excessivePermissions ?? 0,
+      inactiveAccess: metadata.inactiveAccess ?? 0,
+    });
+
+    const retentionScore = this.riskScorer.retentionViolationScore({
+      hasPolicy: metadata.hasRetentionPolicy ?? false,
+      isOverdue: metadata.isRetentionOverdue ?? false,
+      daysPastExpiry: metadata.daysPastExpiry ?? 0,
+    });
+
+    const securityScore = this.riskScorer.securityMisconfigScore({
+      unencrypted: !(metadata.hasEncryption ?? true),
+      publiclyAccessible: metadata.isPubliclyAccessible ?? false,
+      noMfa: !(metadata.hasMfa ?? false),
+      noAuditTrail: !(metadata.hasAuditTrail ?? true),
+    });
+
+    const compositeScore = Math.min(
+      100,
+      vendorScore + aiScore + identityScore + retentionScore + securityScore,
+    );
+
+    const severity = compositeScore >= 80
+      ? 'critical'
+      : compositeScore >= 60
+        ? 'high'
+        : compositeScore >= 40
+          ? 'medium'
+          : compositeScore >= 20
+            ? 'low'
+            : 'info';
+
+    const breakdown = {
+      vendorExposure: vendorScore,
+      aiUsage: aiScore,
+      identityAccess: identityScore,
+      retentionViolation: retentionScore,
+      securityMisconfig: securityScore,
+    };
+
+    const previousTrend = metadata.previousRiskScore
+      ? compositeScore > metadata.previousRiskScore
+        ? 'increasing'
+        : compositeScore < metadata.previousRiskScore
+          ? 'decreasing'
+          : 'stable'
+      : 'stable';
+
+    // Upsert EntityRiskProfile
+    const profile = await this.prisma.entityRiskProfile.upsert({
+      where: {
+        tenantId_entityType_entityId: {
+          tenantId,
+          entityType,
+          entityId,
+        },
+      },
+      create: {
+        tenantId,
+        entityType,
+        entityId,
+        compositeScore,
+        severity,
+        breakdown,
+        trend: previousTrend,
+        lastCalculatedAt: new Date(),
+      },
+      update: {
+        compositeScore,
+        severity,
+        breakdown,
+        trend: previousTrend,
+        lastCalculatedAt: new Date(),
+      },
+    });
+
+    await this.events.publish({
+      type: 'entity.risk.calculated',
+      tenantId,
+      data: { entityType, entityId, compositeScore, severity, breakdown },
+      timestamp: new Date(),
+    });
+
+    return profile;
+  }
+
+  async getRiskTrends(tenantId: string, days = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const profiles = await this.prisma.entityRiskProfile.findMany({
+      where: {
+        tenantId,
+        lastCalculatedAt: { gte: since },
+      },
+      orderBy: { lastCalculatedAt: 'asc' },
+      select: {
+        entityType: true,
+        entityId: true,
+        compositeScore: true,
+        severity: true,
+        trend: true,
+        lastCalculatedAt: true,
+      },
+    });
+
+    return { data: profiles, period: { days, since } };
+  }
+
+  async getRiskProfiles(
+    tenantId: string,
+    filters: {
+      entityType?: string;
+      minScore?: number;
+      trend?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ) {
+    const { page = 1, pageSize = 20, entityType, minScore, trend } = filters;
+
+    const where: any = {
+      tenantId,
+      ...(entityType && { entityType }),
+      ...(minScore !== undefined && { compositeScore: { gte: minScore } }),
+      ...(trend && { trend }),
+    };
+
+    const [data, totalItems] = await Promise.all([
+      this.prisma.entityRiskProfile.findMany({
+        where,
+        orderBy: [{ compositeScore: 'desc' }, { lastCalculatedAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.entityRiskProfile.count({ where }),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    };
+  }
+
+  async recalculateAllRisks(tenantId: string) {
+    const assets = await this.prisma.asset.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, type: true },
+    });
+
+    this.logger.log(
+      `Recalculating risk for ${assets.length} assets in tenant ${tenantId}`,
+    );
+
+    let processed = 0;
+    let failed = 0;
+
+    for (const asset of assets) {
+      try {
+        await this.calculateEntityRisk(tenantId, asset.type, asset.id);
+        processed++;
+      } catch (error) {
+        this.logger.warn(
+          `Failed to recalculate risk for asset ${asset.id}: ${error.message}`,
+        );
+        failed++;
+      }
+    }
+
+    return { processed, failed, total: assets.length };
+  }
+
   private getMaxSeverity(severities: string[]): string | null {
     const order = ['critical', 'high', 'medium', 'low', 'info'];
     for (const level of order) {

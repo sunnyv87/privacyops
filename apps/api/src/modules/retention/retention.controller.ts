@@ -109,4 +109,74 @@ export class RetentionController {
     );
     return { data: result };
   }
+
+  // ---------------------------------------------------------------------------
+  // Violations
+  // ---------------------------------------------------------------------------
+
+  @Get('violations')
+  @RequirePermissions('retention:policies:read')
+  @ApiOperation({ summary: 'List retention violations' })
+  async getViolations(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('violation_type') violationType?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: number,
+    @Query('page_size') pageSize?: number,
+  ) {
+    return this.retentionService.getViolations(tenantId, {
+      violationType,
+      status,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Disposition Certificates
+  // ---------------------------------------------------------------------------
+
+  @Get('disposition-certificates')
+  @RequirePermissions('retention:policies:read')
+  @ApiOperation({ summary: 'List disposition certificates' })
+  async getDispositionCertificates(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('page') page?: number,
+    @Query('page_size') pageSize?: number,
+  ) {
+    return this.retentionService.getDispositionCertificates(tenantId, {
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Enforce Policy
+  // ---------------------------------------------------------------------------
+
+  @Post('enforce')
+  @RequirePermissions('retention:policies:execute')
+  @ApiOperation({ summary: 'Enforce a retention policy on applicable assets' })
+  async enforcePolicy(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body('policyId') policyId: string,
+  ) {
+    const result = await this.retentionService.enforcePolicy(
+      tenantId,
+      policyId,
+    );
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Coverage
+  // ---------------------------------------------------------------------------
+
+  @Get('coverage')
+  @RequirePermissions('retention:policies:read')
+  @ApiOperation({ summary: 'Get retention policy coverage across assets' })
+  async getCoverage(@CurrentUser('tenantId') tenantId: string) {
+    const coverage = await this.retentionService.getCoverage(tenantId);
+    return { data: coverage };
+  }
 }

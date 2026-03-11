@@ -103,4 +103,95 @@ export class AssessmentsController {
     );
     return { data: assessment };
   }
+
+  // ---------------------------------------------------------------------------
+  // DPIA Triggers
+  // ---------------------------------------------------------------------------
+
+  @Post('check-triggers')
+  @RequirePermissions('assessments:assessments:read')
+  @ApiOperation({ summary: 'Check if DPIA triggers are matched' })
+  async checkTriggers(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body()
+    context: {
+      dataCategories?: string[];
+      subjectCount?: number;
+      crossBorder?: boolean;
+      aiUsage?: boolean;
+    },
+  ) {
+    const result = await this.assessmentsService.checkTriggers(
+      tenantId,
+      context,
+    );
+    return { data: result };
+  }
+
+  @Get(':id/privacy-risk')
+  @RequirePermissions('assessments:assessments:read')
+  @ApiOperation({ summary: 'Calculate privacy risk score for an assessment' })
+  async calculatePrivacyRisk(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.assessmentsService.calculatePrivacyRisk(
+      tenantId,
+      id,
+    );
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Trigger Rules CRUD
+  // ---------------------------------------------------------------------------
+
+  @Post('trigger-rules')
+  @RequirePermissions('assessments:assessments:create')
+  @ApiOperation({ summary: 'Create a DPIA trigger rule' })
+  async createTriggerRule(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body() dto: { name: string; condition: any; isActive?: boolean },
+  ) {
+    const rule = await this.assessmentsService.createTriggerRule(tenantId, dto);
+    return { data: rule };
+  }
+
+  @Get('trigger-rules')
+  @RequirePermissions('assessments:assessments:read')
+  @ApiOperation({ summary: 'List DPIA trigger rules' })
+  async findTriggerRules(@CurrentUser('tenantId') tenantId: string) {
+    const rules = await this.assessmentsService.findTriggerRules(tenantId);
+    return { data: rules };
+  }
+
+  @Put('trigger-rules/:id')
+  @RequirePermissions('assessments:assessments:update')
+  @ApiOperation({ summary: 'Update a DPIA trigger rule' })
+  async updateTriggerRule(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+    @Body() dto: { name?: string; condition?: any; isActive?: boolean },
+  ) {
+    const rule = await this.assessmentsService.updateTriggerRule(
+      tenantId,
+      id,
+      dto,
+    );
+    return { data: rule };
+  }
+
+  @Delete('trigger-rules/:id')
+  @RequirePermissions('assessments:assessments:delete')
+  @ApiOperation({ summary: 'Delete a DPIA trigger rule' })
+  async deleteTriggerRule(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.assessmentsService.deleteTriggerRule(
+      tenantId,
+      id,
+    );
+    return { data: result };
+  }
 }

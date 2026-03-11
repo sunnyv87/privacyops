@@ -27,6 +27,13 @@ async function bootstrap() {
 
   // Security
   app.use(helmet());
+
+  // Structured request logging
+  const { RequestLoggerMiddleware } = await import(
+    './core/security/request-logger.middleware'
+  );
+  const requestLogger = new RequestLoggerMiddleware();
+  app.use(requestLogger.use.bind(requestLogger));
   app.enableCors({
     origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
     credentials: true,

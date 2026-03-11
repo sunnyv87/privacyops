@@ -51,6 +51,18 @@ export class CreateLabelDto {
   description?: string;
 }
 
+export class BulkClassifyDto {
+  @ApiProperty({ description: 'Array of asset IDs to classify' })
+  @IsArray()
+  @IsString({ each: true })
+  assetIds: string[];
+
+  @ApiPropertyOptional({ enum: ['regex', 'dictionary', 'ml', 'all'], default: 'all' })
+  @IsOptional()
+  @IsString()
+  method?: string;
+}
+
 export class ClassificationFilterDto {
   @ApiPropertyOptional()
   @IsOptional()

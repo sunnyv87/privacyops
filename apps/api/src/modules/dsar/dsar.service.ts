@@ -402,6 +402,194 @@ export class DsarService {
   }
 
   // ---------------------------------------------------------------------------
+  // Discover Subject Data
+  // ---------------------------------------------------------------------------
+
+  async discoverSubjectData(tenantId: string, requestId: string) {
+    const request = await this.prisma.dsarRequest.findFirst({
+      where: { id: requestId, tenantId },
+      include: { dataSubject: true },
+    });
+
+    if (!request) {
+      throw new NotFoundException(`DSAR request ${requestId} not found`);
+    }
+
+    // Search across data sources for matching assets
+    const dataSubject = request.dataSubject;
+    const assets = await this.prisma.dataAsset.findMany({
+      where: {
+        tenantId,
+        OR: [
+          { metadata: { path: ['dataSubjectIds'], array_contains: dataSubject.id } },
+          { name: { contains: dataSubject.emailHash } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        dataSourceId: true,
+        classificationLabels: true,
+      },
+    });
+
+    const discoveredSources = assets.map((asset) => ({
+      assetId: asset.id,
+      assetName: asset.name,
+      assetType: asset.type,
+      dataSourceId: asset.dataSourceId,
+      classificationLabels: asset.classificationLabels,
+      discoveredAt: new Date().toISOString(),
+    }));
+
+    await this.prisma.dsarRequest.update({
+      where: { id: requestId },
+      data: {
+        discoveredDataSources: discoveredSources,
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'system',
+      action: 'dsar.data_discovered',
+      entityType: 'dsar_request',
+      entityId: requestId,
+      changes: {
+        after: {
+          discoveredCount: discoveredSources.length,
+          dataSubjectId: dataSubject.id,
+        },
+      },
+    });
+
+    await this.events.publish({
+      type: 'dsar.data_discovered',
+      tenantId,
+      data: {
+        requestId,
+        referenceNumber: request.referenceNumber,
+        discoveredCount: discoveredSources.length,
+      },
+      timestamp: new Date(),
+    });
+
+    return {
+      requestId,
+      dataSubjectId: dataSubject.id,
+      discoveredSources,
+      totalDiscovered: discoveredSources.length,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Generate Response Package
+  // ---------------------------------------------------------------------------
+
+  async generateResponsePackage(tenantId: string, requestId: string) {
+    const request = await this.prisma.dsarRequest.findFirst({
+      where: { id: requestId, tenantId },
+    });
+
+    if (!request) {
+      throw new NotFoundException(`DSAR request ${requestId} not found`);
+    }
+
+    const responseMetadata = {
+      generatedAt: new Date().toISOString(),
+      format: 'json',
+      packageUrl: `/api/dsar/requests/${requestId}/download`,
+      discoveredSources: request.discoveredDataSources || [],
+      status: 'generated',
+    };
+
+    await this.prisma.dsarRequest.update({
+      where: { id: requestId },
+      data: { responseMetadata },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'system',
+      action: 'dsar.response_generated',
+      entityType: 'dsar_request',
+      entityId: requestId,
+      changes: {
+        after: { responseMetadata },
+      },
+    });
+
+    await this.events.publish({
+      type: 'dsar.response_generated',
+      tenantId,
+      data: {
+        requestId,
+        referenceNumber: request.referenceNumber,
+        packageUrl: responseMetadata.packageUrl,
+      },
+      timestamp: new Date(),
+    });
+
+    return responseMetadata;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Verify Deletion
+  // ---------------------------------------------------------------------------
+
+  async verifyDeletion(
+    tenantId: string,
+    requestId: string,
+    userId: string,
+  ) {
+    const request = await this.prisma.dsarRequest.findFirst({
+      where: { id: requestId, tenantId },
+    });
+
+    if (!request) {
+      throw new NotFoundException(`DSAR request ${requestId} not found`);
+    }
+
+    const deletionVerification = {
+      verified: true,
+      verifiedAt: new Date().toISOString(),
+      verifiedBy: userId,
+      discoveredSources: request.discoveredDataSources || [],
+    };
+
+    await this.prisma.dsarRequest.update({
+      where: { id: requestId },
+      data: { deletionVerification },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorId: userId,
+      actorType: 'user',
+      action: 'dsar.deletion_verified',
+      entityType: 'dsar_request',
+      entityId: requestId,
+      changes: {
+        after: deletionVerification,
+      },
+    });
+
+    await this.events.publish({
+      type: 'dsar.deletion_verified',
+      tenantId,
+      data: {
+        requestId,
+        referenceNumber: request.referenceNumber,
+        verifiedBy: userId,
+      },
+      timestamp: new Date(),
+    });
+
+    return deletionVerification;
+  }
+
+  // ---------------------------------------------------------------------------
   // Statistics
   // ---------------------------------------------------------------------------
 

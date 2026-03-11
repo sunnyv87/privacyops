@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
+import { createHash } from 'crypto';
 import {
   CreateRetentionPolicyDto,
   UpdateRetentionPolicyDto,
@@ -253,6 +254,351 @@ export class RetentionService {
       policyId,
       action: policy.actionOnExpiry,
       status: 'disposal_initiated',
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Detect Violations
+  // ---------------------------------------------------------------------------
+
+  async detectViolations(tenantId: string) {
+    const now = new Date();
+    const violations: any[] = [];
+
+    // 1. Assets without retention policies (no_policy)
+    const allAssets = await this.prisma.dataAsset.findMany({
+      where: { tenantId },
+      select: { id: true, name: true, type: true },
+    });
+
+    const policiedCategories = await this.prisma.retentionPolicy.findMany({
+      where: { tenantId, deletedAt: null, status: 'active' },
+      select: { recordCategory: true },
+    });
+    const coveredCategories = new Set(
+      policiedCategories.map((p) => p.recordCategory),
+    );
+
+    for (const asset of allAssets) {
+      if (!coveredCategories.has(asset.type)) {
+        violations.push({
+          tenantId,
+          violationType: 'no_policy',
+          entityType: 'data_asset',
+          entityId: asset.id,
+          description: `Asset "${asset.name}" has no applicable retention policy`,
+          status: 'open',
+          detectedAt: now,
+        });
+      }
+    }
+
+    // 2. Policies not reviewed in 365+ days (overdue_review)
+    const overdueReviewThreshold = new Date(
+      now.getTime() - 365 * 24 * 60 * 60 * 1000,
+    );
+
+    const overduePolicies = await this.prisma.retentionPolicy.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        status: 'active',
+        OR: [
+          { lastReviewedAt: { lt: overdueReviewThreshold } },
+          { lastReviewedAt: null },
+        ],
+      },
+    });
+
+    for (const policy of overduePolicies) {
+      violations.push({
+        tenantId,
+        violationType: 'overdue_review',
+        entityType: 'retention_policy',
+        entityId: policy.id,
+        description: `Policy "${policy.name}" has not been reviewed in over 365 days`,
+        status: 'open',
+        detectedAt: now,
+      });
+    }
+
+    // Create violation records
+    if (violations.length > 0) {
+      await this.prisma.retentionViolation.createMany({
+        data: violations,
+      });
+    }
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'system',
+      action: 'retention.violations_detected',
+      entityType: 'retention_violation',
+      entityId: tenantId,
+      changes: {
+        after: {
+          totalViolations: violations.length,
+          byType: {
+            no_policy: violations.filter((v) => v.violationType === 'no_policy')
+              .length,
+            overdue_review: violations.filter(
+              (v) => v.violationType === 'overdue_review',
+            ).length,
+          },
+        },
+      },
+    });
+
+    this.logger.log(
+      `Detected ${violations.length} retention violations for tenant ${tenantId}`,
+    );
+
+    return { totalViolations: violations.length };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Enforce Policy
+  // ---------------------------------------------------------------------------
+
+  async enforcePolicy(tenantId: string, policyId: string) {
+    const policy = await this.prisma.retentionPolicy.findFirst({
+      where: { id: policyId, tenantId, deletedAt: null },
+    });
+
+    if (!policy) {
+      throw new NotFoundException(`Retention policy ${policyId} not found`);
+    }
+
+    // Find applicable assets
+    const assets = await this.prisma.dataAsset.findMany({
+      where: { tenantId, type: policy.recordCategory },
+      select: { id: true, name: true },
+    });
+
+    // Trigger retention workflow
+    const workflow = await this.prisma.workflow.create({
+      data: {
+        tenantId,
+        type: 'retention',
+        status: 'active',
+        entityType: 'retention_policy',
+        entityId: policyId,
+        currentStep: 'enforcement_initiated',
+        metadata: {
+          policyName: policy.name,
+          actionOnExpiry: policy.actionOnExpiry,
+          applicableAssets: assets.map((a) => a.id),
+          enforcedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    await this.prisma.retentionPolicy.update({
+      where: { id: policyId },
+      data: { lastEnforcedAt: new Date() },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'system',
+      action: 'retention.policy_enforced',
+      entityType: 'retention_policy',
+      entityId: policyId,
+      changes: {
+        after: {
+          workflowId: workflow.id,
+          applicableAssetCount: assets.length,
+        },
+      },
+    });
+
+    await this.events.publish({
+      type: 'retention.policy.enforced',
+      tenantId,
+      data: {
+        policyId,
+        workflowId: workflow.id,
+        assetCount: assets.length,
+      },
+      timestamp: new Date(),
+    });
+
+    this.logger.log(
+      `Retention policy ${policyId} enforced on ${assets.length} assets`,
+    );
+
+    return {
+      policyId,
+      workflowId: workflow.id,
+      applicableAssets: assets.length,
+      status: 'enforcement_initiated',
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Generate Disposition Certificate
+  // ---------------------------------------------------------------------------
+
+  async generateDispositionCertificate(
+    tenantId: string,
+    policyId: string,
+    assetId: string,
+    action: string,
+    userId: string,
+  ) {
+    const timestamp = new Date().toISOString();
+    const integrityHash = createHash('sha256')
+      .update(`${action}:${assetId}:${timestamp}`)
+      .digest('hex');
+
+    const certificate = await this.prisma.dispositionCertificate.create({
+      data: {
+        tenantId,
+        policyId,
+        assetId,
+        action,
+        executedBy: userId,
+        executedAt: new Date(),
+        integrityHash,
+        metadata: {
+          timestamp,
+          generatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorId: userId,
+      actorType: 'user',
+      action: 'retention.disposition_certificate_generated',
+      entityType: 'disposition_certificate',
+      entityId: certificate.id,
+      changes: {
+        after: {
+          policyId,
+          assetId,
+          action,
+          integrityHash,
+        },
+      },
+    });
+
+    return certificate;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Get Violations
+  // ---------------------------------------------------------------------------
+
+  async getViolations(
+    tenantId: string,
+    filters?: {
+      violationType?: string;
+      status?: string;
+      page?: number;
+      pageSize?: number;
+    },
+  ) {
+    const page = filters?.page ?? 1;
+    const pageSize = filters?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {
+      tenantId,
+      ...(filters?.violationType && { violationType: filters.violationType }),
+      ...(filters?.status && { status: filters.status }),
+    };
+
+    const [data, totalItems] = await Promise.all([
+      this.prisma.retentionViolation.findMany({
+        where,
+        orderBy: { detectedAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.retentionViolation.count({ where }),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Get Disposition Certificates
+  // ---------------------------------------------------------------------------
+
+  async getDispositionCertificates(
+    tenantId: string,
+    filters?: { page?: number; pageSize?: number },
+  ) {
+    const page = filters?.page ?? 1;
+    const pageSize = filters?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+
+    const where = { tenantId };
+
+    const [data, totalItems] = await Promise.all([
+      this.prisma.dispositionCertificate.findMany({
+        where,
+        orderBy: { executedAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.dispositionCertificate.count({ where }),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Get Coverage
+  // ---------------------------------------------------------------------------
+
+  async getCoverage(tenantId: string) {
+    const [totalAssets, policies] = await Promise.all([
+      this.prisma.dataAsset.count({ where: { tenantId } }),
+      this.prisma.retentionPolicy.findMany({
+        where: { tenantId, deletedAt: null, status: 'active' },
+        select: { recordCategory: true },
+      }),
+    ]);
+
+    const coveredCategories = new Set(
+      policies.map((p) => p.recordCategory),
+    );
+
+    const coveredAssets = await this.prisma.dataAsset.count({
+      where: {
+        tenantId,
+        type: { in: Array.from(coveredCategories) },
+      },
+    });
+
+    return {
+      totalAssets,
+      coveredAssets,
+      uncoveredAssets: totalAssets - coveredAssets,
+      coveragePercentage:
+        totalAssets > 0
+          ? Math.round((coveredAssets / totalAssets) * 100 * 10) / 10
+          : 100,
+      activePolicies: policies.length,
     };
   }
 }

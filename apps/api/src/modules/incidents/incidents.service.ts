@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
@@ -10,6 +10,8 @@ import {
 
 @Injectable()
 export class IncidentsService {
+  private readonly logger = new Logger(IncidentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -309,6 +311,289 @@ export class IncidentsService {
     }
 
     return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Detect Breach
+  // ---------------------------------------------------------------------------
+
+  async detectBreach(
+    tenantId: string,
+    signals: { type: string; source: string; evidence: any },
+  ) {
+    const rules = await this.prisma.breachDetectionRule.findMany({
+      where: { tenantId, isActive: true },
+    });
+
+    const matchedRules: any[] = [];
+
+    for (const rule of rules) {
+      const condition = rule.condition as Record<string, any>;
+
+      let matched = false;
+      if (condition.signalType && condition.signalType === signals.type) {
+        matched = true;
+      }
+      if (condition.source && condition.source === signals.source) {
+        matched = true;
+      }
+
+      if (matched) {
+        matchedRules.push({
+          ruleId: rule.id,
+          name: rule.name,
+          condition: rule.condition,
+        });
+      }
+    }
+
+    let incident = null;
+
+    if (matchedRules.length > 0) {
+      // Auto-create incident
+      const referenceNumber = await this.generateReferenceNumber(tenantId);
+      const now = new Date();
+
+      incident = await this.prisma.incident.create({
+        data: {
+          tenantId,
+          referenceNumber,
+          title: `Auto-detected: ${signals.type} from ${signals.source}`,
+          severity: 'high',
+          status: 'reported',
+          description: `Automatically detected by breach detection rules. Evidence: ${JSON.stringify(signals.evidence)}`,
+          isPersonalDataBreach: true,
+          detectedAt: now,
+          reportedAt: now,
+          regulatoryNotifications: {
+            deadlines: this.calculateBreachNotificationDeadlines(now),
+            notified: [],
+          },
+          metadata: {
+            detectionSignals: signals,
+            matchedRules: matchedRules.map((r) => r.ruleId),
+          },
+        },
+      });
+
+      await this.audit.log({
+        tenantId,
+        actorType: 'system',
+        action: 'incident.auto_detected',
+        entityType: 'incident',
+        entityId: incident.id,
+        changes: {
+          after: {
+            referenceNumber,
+            matchedRules: matchedRules.length,
+            signals,
+          },
+        },
+      });
+
+      await this.events.publish({
+        type: 'incident.breach_detected',
+        tenantId,
+        data: {
+          incidentId: incident.id,
+          referenceNumber,
+          matchedRules: matchedRules.map((r) => r.ruleId),
+          signals,
+        },
+        timestamp: now,
+      });
+
+      this.logger.log(
+        `Breach auto-detected: incident ${incident.id} created from ${matchedRules.length} matched rules`,
+      );
+    }
+
+    return {
+      detected: matchedRules.length > 0,
+      matchedRules,
+      incident,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Track Notifications
+  // ---------------------------------------------------------------------------
+
+  async trackNotifications(tenantId: string, incidentId: string) {
+    const incident = await this.prisma.incident.findFirst({
+      where: { id: incidentId, tenantId, deletedAt: null },
+    });
+
+    if (!incident) {
+      throw new NotFoundException(`Incident ${incidentId} not found`);
+    }
+
+    const notifications = (incident.regulatoryNotifications as Record<string, any>) || {};
+    const deadlines = notifications.deadlines || {};
+    const notified = notifications.notified || [];
+    const now = new Date();
+
+    const remainingDeadlines = Object.entries(deadlines).map(
+      ([regulation, deadline]) => {
+        const deadlineDate = new Date(deadline as string);
+        const remainingMs = deadlineDate.getTime() - now.getTime();
+        const remainingHours = Math.max(0, Math.round(remainingMs / (1000 * 60 * 60) * 10) / 10);
+        const isOverdue = remainingMs < 0;
+        const isNotified = notified.some(
+          (n: any) => n.regulation === regulation,
+        );
+
+        return {
+          regulation,
+          deadline,
+          remainingHours,
+          isOverdue,
+          isNotified,
+        };
+      },
+    );
+
+    return {
+      incidentId,
+      notificationsSent: notified,
+      remainingDeadlines,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Calculate Deadline
+  // ---------------------------------------------------------------------------
+
+  async calculateDeadline(tenantId: string, incidentId: string) {
+    const incident = await this.prisma.incident.findFirst({
+      where: { id: incidentId, tenantId, deletedAt: null },
+    });
+
+    if (!incident) {
+      throw new NotFoundException(`Incident ${incidentId} not found`);
+    }
+
+    const deadlines = this.calculateBreachNotificationDeadlines(
+      incident.reportedAt,
+    );
+
+    await this.prisma.incident.update({
+      where: { id: incidentId },
+      data: {
+        regulatoryDeadline: new Date(deadlines.gdpr),
+        regulatoryNotifications: {
+          ...((incident.regulatoryNotifications as Record<string, any>) || {}),
+          deadlines,
+        },
+      },
+    });
+
+    return {
+      incidentId,
+      severity: incident.severity,
+      deadlines,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Breach Detection Rules CRUD
+  // ---------------------------------------------------------------------------
+
+  async createDetectionRule(
+    tenantId: string,
+    dto: { name: string; condition: any; isActive?: boolean },
+  ) {
+    const rule = await this.prisma.breachDetectionRule.create({
+      data: {
+        tenantId,
+        name: dto.name,
+        condition: dto.condition,
+        isActive: dto.isActive ?? true,
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'breach_detection_rule.created',
+      entityType: 'breach_detection_rule',
+      entityId: rule.id,
+      changes: { after: dto },
+    });
+
+    return rule;
+  }
+
+  async findDetectionRules(tenantId: string) {
+    return this.prisma.breachDetectionRule.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async updateDetectionRule(
+    tenantId: string,
+    ruleId: string,
+    dto: { name?: string; condition?: any; isActive?: boolean },
+  ) {
+    const existing = await this.prisma.breachDetectionRule.findFirst({
+      where: { id: ruleId, tenantId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Detection rule ${ruleId} not found`);
+    }
+
+    const updated = await this.prisma.breachDetectionRule.update({
+      where: { id: ruleId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.condition !== undefined && { condition: dto.condition }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'breach_detection_rule.updated',
+      entityType: 'breach_detection_rule',
+      entityId: ruleId,
+      changes: {
+        before: existing,
+        after: updated,
+      },
+    });
+
+    return updated;
+  }
+
+  async deleteDetectionRule(tenantId: string, ruleId: string) {
+    const existing = await this.prisma.breachDetectionRule.findFirst({
+      where: { id: ruleId, tenantId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Detection rule ${ruleId} not found`);
+    }
+
+    await this.prisma.breachDetectionRule.delete({
+      where: { id: ruleId },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'breach_detection_rule.deleted',
+      entityType: 'breach_detection_rule',
+      entityId: ruleId,
+      changes: {
+        before: existing,
+        after: null,
+      },
+    });
+
+    return { deleted: true };
   }
 
   // ---------------------------------------------------------------------------

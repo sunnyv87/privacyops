@@ -50,6 +50,38 @@ export class RopaController {
     });
   }
 
+  @Get('completeness')
+  @RequirePermissions('ropa:entries:read')
+  @ApiOperation({ summary: 'Get completeness overview for all RoPA entries' })
+  async getCompletenessOverview(
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const overview = await this.ropaService.getCompletenessOverview(tenantId);
+    return { data: overview };
+  }
+
+  @Get('report')
+  @RequirePermissions('ropa:entries:read')
+  @ApiOperation({ summary: 'Generate RoPA regulatory report' })
+  async generateReport(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('format') format?: string,
+  ) {
+    const report = await this.ropaService.generateReport(
+      tenantId,
+      format || 'json',
+    );
+    return { data: report };
+  }
+
+  @Get('processing-map')
+  @RequirePermissions('ropa:entries:read')
+  @ApiOperation({ summary: 'Get processing map for visual mapping' })
+  async getProcessingMap(@CurrentUser('tenantId') tenantId: string) {
+    const map = await this.ropaService.getProcessingMap(tenantId);
+    return { data: map };
+  }
+
   @Get('export')
   @RequirePermissions('ropa:entries:export')
   @ApiOperation({ summary: 'Export all RoPA entries for regulatory submission' })
@@ -79,6 +111,18 @@ export class RopaController {
     @Body() dto: UpdateRopaEntryDto,
   ) {
     const entry = await this.ropaService.update(tenantId, id, userId, dto);
+    return { data: entry };
+  }
+
+  @Post(':id/link-vendors')
+  @RequirePermissions('ropa:entries:update')
+  @ApiOperation({ summary: 'Link vendors to a RoPA entry' })
+  async linkVendors(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+    @Body('vendorIds') vendorIds: string[],
+  ) {
+    const entry = await this.ropaService.linkVendors(tenantId, id, vendorIds);
     return { data: entry };
   }
 

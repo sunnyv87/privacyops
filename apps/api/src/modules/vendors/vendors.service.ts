@@ -287,6 +287,196 @@ export class VendorsService {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Assess Security Posture
+  // ---------------------------------------------------------------------------
+
+  async assessSecurityPosture(tenantId: string, vendorId: string) {
+    const vendor = await this.prisma.vendor.findFirst({
+      where: { id: vendorId, tenantId, deletedAt: null },
+      include: {
+        assessments: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!vendor) {
+      throw new NotFoundException(`Vendor ${vendorId} not found`);
+    }
+
+    // Aggregate assessment scores
+    const assessments = vendor.assessments || [];
+    const avgRiskScore =
+      assessments.length > 0
+        ? Math.round(
+            assessments.reduce((sum, a) => sum + (a.riskScore || 0), 0) /
+              assessments.length,
+          )
+        : 0;
+
+    const latestAssessment = assessments[0] || null;
+    const hasRecentAssessment = latestAssessment
+      ? new Date().getTime() - new Date(latestAssessment.createdAt).getTime() <
+        365 * 24 * 60 * 60 * 1000
+      : false;
+
+    const posture = {
+      vendorId,
+      vendorName: vendor.name,
+      riskTier: vendor.riskTier,
+      averageRiskScore: avgRiskScore,
+      totalAssessments: assessments.length,
+      latestAssessmentDate: latestAssessment?.createdAt || null,
+      hasRecentAssessment,
+      dpaStatus: vendor.dpaStatus,
+      contractExpiry: vendor.contractExpiry,
+      overallPosture: avgRiskScore <= 30 ? 'good' : avgRiskScore <= 60 ? 'moderate' : 'poor',
+    };
+
+    await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: { securityPosture: posture },
+    });
+
+    return posture;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Get Vendor Data Access
+  // ---------------------------------------------------------------------------
+
+  async getVendorDataAccess(tenantId: string, vendorId: string) {
+    const vendor = await this.prisma.vendor.findFirst({
+      where: { id: vendorId, tenantId, deletedAt: null },
+    });
+
+    if (!vendor) {
+      throw new NotFoundException(`Vendor ${vendorId} not found`);
+    }
+
+    const accessMappings = await this.prisma.identityAccessMapping.findMany({
+      where: {
+        tenantId,
+        identityType: 'vendor',
+        identityId: vendorId,
+      },
+      include: {
+        asset: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            classificationLabels: true,
+          },
+        },
+      },
+    });
+
+    return {
+      vendorId,
+      vendorName: vendor.name,
+      accessMappings: accessMappings.map((m) => ({
+        assetId: m.asset?.id,
+        assetName: m.asset?.name,
+        assetType: m.asset?.type,
+        classificationLabels: m.asset?.classificationLabels,
+        accessLevel: m.accessLevel,
+        lastAccessed: m.lastAccessed,
+      })),
+      totalAssets: accessMappings.length,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Monitor Vendor
+  // ---------------------------------------------------------------------------
+
+  async monitorVendor(
+    tenantId: string,
+    vendorId: string,
+    enable: boolean,
+  ) {
+    const vendor = await this.prisma.vendor.findFirst({
+      where: { id: vendorId, tenantId, deletedAt: null },
+    });
+
+    if (!vendor) {
+      throw new NotFoundException(`Vendor ${vendorId} not found`);
+    }
+
+    const updated = await this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: { monitoringEnabled: enable },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: enable
+        ? 'vendor.monitoring_enabled'
+        : 'vendor.monitoring_disabled',
+      entityType: 'vendor',
+      entityId: vendorId,
+      changes: {
+        before: { monitoringEnabled: vendor.monitoringEnabled },
+        after: { monitoringEnabled: enable },
+      },
+    });
+
+    if (enable) {
+      await this.events.publish({
+        type: 'vendor.monitoring.enabled',
+        tenantId,
+        data: { vendorId, vendorName: vendor.name },
+        timestamp: new Date(),
+      });
+    }
+
+    this.logger.log(
+      `Vendor ${vendorId} monitoring ${enable ? 'enabled' : 'disabled'}`,
+    );
+
+    return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Get Risk Matrix
+  // ---------------------------------------------------------------------------
+
+  async getRiskMatrix(tenantId: string) {
+    const vendors = await this.prisma.vendor.findMany({
+      where: { tenantId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        riskTier: true,
+        riskScore: true,
+        status: true,
+        dpaStatus: true,
+        contractExpiry: true,
+      },
+      orderBy: { riskScore: 'desc' },
+    });
+
+    return {
+      totalVendors: vendors.length,
+      vendors: vendors.map((v) => ({
+        vendorId: v.id,
+        vendorName: v.name,
+        riskTier: v.riskTier,
+        riskScore: v.riskScore || 0,
+        status: v.status,
+        dpaStatus: v.dpaStatus,
+        contractExpiry: v.contractExpiry,
+      })),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Statistics
+  // ---------------------------------------------------------------------------
+
   async getStats(tenantId: string) {
     const [riskTierDistribution, statusDistribution, totalVendors, assessmentsDue] =
       await Promise.all([

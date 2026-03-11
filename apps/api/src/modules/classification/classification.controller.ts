@@ -13,6 +13,7 @@ import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import {
   ClassifyAssetDto,
   CreateLabelDto,
+  BulkClassifyDto,
 } from './dto/classification.dto';
 
 @ApiTags('Classification')
@@ -105,5 +106,41 @@ export class ClassificationController {
   async getStats(@CurrentUser('tenantId') tenantId: string) {
     const stats = await this.classificationService.getStats(tenantId);
     return { data: stats };
+  }
+
+  @Post('bulk-classify')
+  @RequirePermissions('classification:classify:execute')
+  @ApiOperation({ summary: 'Classify multiple assets in bulk' })
+  async bulkClassify(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: BulkClassifyDto,
+  ) {
+    const result = await this.classificationService.bulkClassify(
+      tenantId,
+      dto.assetIds,
+      userId,
+    );
+    return { data: result };
+  }
+
+  @Get('coverage')
+  @RequirePermissions('classification:stats:read')
+  @ApiOperation({ summary: 'Get classification coverage across all assets' })
+  async getClassificationCoverage(
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const coverage = await this.classificationService.getClassificationCoverage(tenantId);
+    return { data: coverage };
+  }
+
+  @Get('toxic-combinations')
+  @RequirePermissions('classification:results:read')
+  @ApiOperation({ summary: 'Detect toxic data combinations across assets' })
+  async getToxicCombinations(
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const results = await this.classificationService.getToxicCombinations(tenantId);
+    return { data: results };
   }
 }

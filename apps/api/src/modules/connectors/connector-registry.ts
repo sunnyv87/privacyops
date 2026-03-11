@@ -6,6 +6,11 @@ import {
 } from './interfaces/connector.interface';
 import { AwsS3Connector } from './implementations/aws-s3.connector';
 import { PostgresConnector } from './implementations/postgres.connector';
+import { MysqlConnector } from './implementations/mysql.connector';
+import { MongodbConnector } from './implementations/mongodb.connector';
+import { AzureBlobConnector } from './implementations/azure-blob.connector';
+import { GcpStorageConnector } from './implementations/gcp-storage.connector';
+import { SnowflakeConnector } from './implementations/snowflake.connector';
 
 @Injectable()
 export class ConnectorRegistry {
@@ -15,12 +20,11 @@ export class ConnectorRegistry {
     // Register all available connectors
     this.register('aws_s3', () => new AwsS3Connector());
     this.register('postgresql', () => new PostgresConnector());
-    // Add more connectors as they are implemented:
-    // this.register('mysql', () => new MysqlConnector());
-    // this.register('mongodb', () => new MongodbConnector());
-    // this.register('azure_blob', () => new AzureBlobConnector());
-    // this.register('gcp_storage', () => new GcpStorageConnector());
-    // this.register('snowflake', () => new SnowflakeConnector());
+    this.register('mysql', () => new MysqlConnector());
+    this.register('mongodb', () => new MongodbConnector());
+    this.register('azure_blob', () => new AzureBlobConnector());
+    this.register('gcp_storage', () => new GcpStorageConnector());
+    this.register('snowflake', () => new SnowflakeConnector());
   }
 
   register(type: DataSourceType, factory: () => IConnector): void {

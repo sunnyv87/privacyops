@@ -195,6 +195,89 @@ export class ConnectorsService {
     });
   }
 
+  async healthCheck(tenantId: string, id: string) {
+    const source = await this.findById(tenantId, id);
+    const connector = this.registry.create(source.type as any);
+
+    try {
+      await connector.initialize({
+        type: source.type as any,
+        credentials: source.connectionConfig as any,
+        options: {},
+      });
+
+      const result = await connector.testConnection();
+
+      await this.prisma.dataSource.update({
+        where: { id },
+        data: {
+          healthStatus: result.success ? 'healthy' : 'unhealthy',
+          lastHealthCheck: new Date(),
+          status: result.success ? 'connected' : 'error',
+          lastConnectedAt: result.success ? new Date() : undefined,
+        },
+      });
+
+      await this.events.publish({
+        type: 'connector.health_checked',
+        tenantId,
+        data: { connectorId: id, healthy: result.success, message: result.message },
+        timestamp: new Date(),
+      });
+
+      return {
+        connectorId: id,
+        healthy: result.success,
+        message: result.message,
+        checkedAt: new Date(),
+        metadata: result.metadata,
+      };
+    } catch (error: any) {
+      await this.prisma.dataSource.update({
+        where: { id },
+        data: {
+          healthStatus: 'unhealthy',
+          lastHealthCheck: new Date(),
+          status: 'error',
+        },
+      });
+
+      return {
+        connectorId: id,
+        healthy: false,
+        message: `Health check failed: ${error.message}`,
+        checkedAt: new Date(),
+      };
+    } finally {
+      await connector.disconnect();
+    }
+  }
+
+  async getHealthSummary(tenantId: string) {
+    const connectors = await this.prisma.dataSource.findMany({
+      where: { tenantId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        healthStatus: true,
+        lastHealthCheck: true,
+        lastConnectedAt: true,
+      },
+    });
+
+    const summary = {
+      total: connectors.length,
+      healthy: connectors.filter((c) => c.healthStatus === 'healthy').length,
+      unhealthy: connectors.filter((c) => c.healthStatus === 'unhealthy').length,
+      unknown: connectors.filter((c) => !c.healthStatus).length,
+      connectors,
+    };
+
+    return summary;
+  }
+
   getAvailableConnectors() {
     return this.registry.getMetadata();
   }

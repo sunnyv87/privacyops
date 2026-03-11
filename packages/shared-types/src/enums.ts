@@ -54,6 +54,10 @@ export enum ClassificationCategory {
   PHI = 'phi',
   SENSITIVE = 'sensitive',
   PUBLIC = 'public',
+  CREDENTIALS = 'credentials',
+  BIOMETRIC = 'biometric',
+  GOVERNMENT_ID = 'government_id',
+  AI_TRAINING = 'ai_training',
 }
 
 export enum Severity {
@@ -268,4 +272,148 @@ export enum Permission {
   AUDIT_ADMIN = 'audit:admin',
   AUDIT_EXPORT = 'audit:export',
   AUDIT_PII_READ = 'audit:pii:read',
+
+  // Data Graph
+  DATA_GRAPH_READ = 'dspm:data-graph:read',
+  DATA_GRAPH_ADMIN = 'dspm:data-graph:admin',
+
+  // Identity Access
+  IDENTITY_ACCESS_READ = 'dspm:identity-access:read',
+  IDENTITY_ACCESS_ADMIN = 'dspm:identity-access:admin',
+
+  // Shadow Data
+  SHADOW_DATA_READ = 'dspm:shadow-data:read',
+  SHADOW_DATA_ADMIN = 'dspm:shadow-data:admin',
+
+  // Lineage
+  LINEAGE_READ = 'dspm:lineage:read',
+  LINEAGE_ADMIN = 'dspm:lineage:admin',
+
+  // Attack Paths
+  ATTACK_PATHS_READ = 'dspm:attack-paths:read',
+  ATTACK_PATHS_ADMIN = 'dspm:attack-paths:admin',
+
+  // Remediation
+  REMEDIATION_READ = 'remediation:read',
+  REMEDIATION_ADMIN = 'remediation:admin',
+  REMEDIATION_EXECUTE = 'remediation:execute',
+
+  // AI Governance
+  AI_GOVERNANCE_READ = 'ai-governance:read',
+  AI_GOVERNANCE_ADMIN = 'ai-governance:admin',
+}
+
+// ── New Module Enums ─────────────────────────────────────────
+
+export enum RemediationActionType {
+  REMOVE_PUBLIC_ACCESS = 'remove_public_access',
+  REVOKE_PERMISSIONS = 'revoke_permissions',
+  APPLY_RETENTION = 'apply_retention',
+  QUARANTINE = 'quarantine',
+  TRIGGER_REVIEW = 'trigger_review',
+}
+
+export enum RemediationStatus {
+  PROPOSED = 'proposed',
+  PENDING_APPROVAL = 'pending_approval',
+  APPROVED = 'approved',
+  EXECUTING = 'executing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  ROLLED_BACK = 'rolled_back',
+}
+
+export enum ShadowDataAlertType {
+  DUPLICATE = 'duplicate',
+  ORPHANED = 'orphaned',
+  STALE_EXPORT = 'stale_export',
+  SHADOW_SAAS = 'shadow_saas',
+  BACKUP_COPY = 'backup_copy',
+  AI_SANDBOX = 'ai_sandbox',
+}
+
+export enum IdentityType {
+  USER = 'user',
+  SERVICE_ACCOUNT = 'service_account',
+  VENDOR = 'vendor',
+  GROUP = 'group',
+  PUBLIC = 'public',
+}
+
+export enum LineageTransformType {
+  COPY = 'copy',
+  ETL = 'etl',
+  EXPORT = 'export',
+  SHARE = 'share',
+  API_SYNC = 'api_sync',
+  BACKUP = 'backup',
+  AI_TRAINING = 'ai_training',
+}
+
+export enum AttackPathStatus {
+  ACTIVE = 'active',
+  MITIGATED = 'mitigated',
+  FALSE_POSITIVE = 'false_positive',
+}
+
+export enum AiSystemRiskCategory {
+  UNACCEPTABLE = 'unacceptable',
+  HIGH = 'high',
+  LIMITED = 'limited',
+  MINIMAL = 'minimal',
+}
+
+export enum AiSystemStatus {
+  ACTIVE = 'active',
+  DEVELOPMENT = 'development',
+  DEPRECATED = 'deprecated',
+  RETIRED = 'retired',
+}
+
+export enum AiDatasetUsageType {
+  TRAINING = 'training',
+  VALIDATION = 'validation',
+  INFERENCE = 'inference',
+  FINE_TUNING = 'fine_tuning',
+}
+
+export enum DataGraphNodeType {
+  ASSET = 'asset',
+  DATASET = 'dataset',
+  COLUMN = 'column',
+  IDENTITY = 'identity',
+  VENDOR = 'vendor',
+  AI_SYSTEM = 'ai_system',
+  PROCESSING_ACTIVITY = 'processing_activity',
+  RETENTION_POLICY = 'retention_policy',
+}
+
+export enum DataGraphRelationshipType {
+  CONTAINS = 'CONTAINS',
+  STORED_IN = 'STORED_IN',
+  ACCESSIBLE_BY = 'ACCESSIBLE_BY',
+  OWNED_BY = 'OWNED_BY',
+  SHARED_WITH = 'SHARED_WITH',
+  USED_BY_AI = 'USED_BY_AI',
+  GOVERNED_BY = 'GOVERNED_BY',
+}
+
+export enum RetentionViolationType {
+  NO_POLICY = 'no_policy',
+  EXPIRED = 'expired',
+  OVERDUE_REVIEW = 'overdue_review',
+}
+
+export enum ControlCheckResult {
+  PASS = 'pass',
+  FAIL = 'fail',
+  PARTIAL = 'partial',
+  ERROR = 'error',
+}
+
+export enum BreachDetectionRuleType {
+  LARGE_EXPORT = 'large_export',
+  UNAUTHORIZED_ACCESS = 'unauthorized_access',
+  EXTERNAL_EXPOSURE = 'external_exposure',
+  ANOMALY = 'anomaly',
 }

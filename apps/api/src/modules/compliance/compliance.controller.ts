@@ -120,4 +120,86 @@ export class ComplianceController {
     const scorecard = await this.complianceService.getScorecard(tenantId);
     return { data: scorecard };
   }
+
+  // ---------------------------------------------------------------------------
+  // Gaps
+  // ---------------------------------------------------------------------------
+
+  @Get('gaps')
+  @RequirePermissions('compliance:controls:read')
+  @ApiOperation({ summary: 'List compliance gaps' })
+  async findGaps(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('regulation_id') regulationId?: string,
+    @Query('severity') severity?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: number,
+    @Query('page_size') pageSize?: number,
+  ) {
+    return this.complianceService.findGaps(tenantId, {
+      regulationId,
+      severity,
+      status,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auto Evidence Collection
+  // ---------------------------------------------------------------------------
+
+  @Post('auto-evidence')
+  @RequirePermissions('compliance:evidence:create')
+  @ApiOperation({ summary: 'Auto-collect evidence for a control' })
+  async autoCollectEvidence(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body('controlId') controlId: string,
+  ) {
+    const result = await this.complianceService.autoCollectEvidence(
+      tenantId,
+      controlId,
+    );
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cross-Regulation Map
+  // ---------------------------------------------------------------------------
+
+  @Get('cross-map')
+  @RequirePermissions('compliance:controls:read')
+  @ApiOperation({ summary: 'Get cross-regulation control mapping' })
+  async mapCrossRegulation(@CurrentUser('tenantId') tenantId: string) {
+    const map = await this.complianceService.mapCrossRegulation(tenantId);
+    return { data: map };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Frameworks
+  // ---------------------------------------------------------------------------
+
+  @Post('frameworks/import')
+  @RequirePermissions('compliance:regulations:create')
+  @ApiOperation({ summary: 'Import a compliance framework' })
+  async importFramework(
+    @Body()
+    dto: {
+      name: string;
+      shortName: string;
+      version: string;
+      obligations?: any[];
+    },
+  ) {
+    const framework = await this.complianceService.importFramework(dto);
+    return { data: framework };
+  }
+
+  @Get('frameworks')
+  @RequirePermissions('compliance:regulations:read')
+  @ApiOperation({ summary: 'List compliance frameworks' })
+  async findFrameworks() {
+    const frameworks = await this.complianceService.findFrameworks();
+    return { data: frameworks };
+  }
 }

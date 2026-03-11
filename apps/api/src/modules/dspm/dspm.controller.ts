@@ -83,6 +83,48 @@ export class DspmController {
     return { data: result };
   }
 
+  @Get('risk-profiles')
+  @RequirePermissions('dspm:findings:read')
+  @ApiOperation({ summary: 'List entity risk profiles with filters' })
+  async getRiskProfiles(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('entity_type') entityType?: string,
+    @Query('min_score') minScore?: number,
+    @Query('trend') trend?: string,
+    @Query('page') page?: number,
+    @Query('page_size') pageSize?: number,
+  ) {
+    return this.dspmService.getRiskProfiles(tenantId, {
+      entityType,
+      minScore: minScore ? Number(minScore) : undefined,
+      trend,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
+  }
+
+  @Get('risk-trends')
+  @RequirePermissions('dspm:findings:read')
+  @ApiOperation({ summary: 'Get risk score trends over time' })
+  async getRiskTrends(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('days') days?: number,
+  ) {
+    const result = await this.dspmService.getRiskTrends(
+      tenantId,
+      days ? Number(days) : undefined,
+    );
+    return { data: result };
+  }
+
+  @Post('risk/recalculate-all')
+  @RequirePermissions('dspm:findings:create')
+  @ApiOperation({ summary: 'Recalculate risk scores for all assets' })
+  async recalculateAllRisks(@CurrentUser('tenantId') tenantId: string) {
+    const result = await this.dspmService.recalculateAllRisks(tenantId);
+    return { data: result };
+  }
+
   @Get('data-map')
   @RequirePermissions('dspm:data-map:read')
   @ApiOperation({ summary: 'Get data map visualization data' })

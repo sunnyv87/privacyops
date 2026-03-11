@@ -43,6 +43,14 @@ export class VendorsController {
     return { data: stats };
   }
 
+  @Get('risk-matrix')
+  @RequirePermissions('vendors:vendors:read')
+  @ApiOperation({ summary: 'Get vendor risk matrix for visualization' })
+  async getRiskMatrix(@CurrentUser('tenantId') tenantId: string) {
+    const matrix = await this.vendorsService.getRiskMatrix(tenantId);
+    return { data: matrix };
+  }
+
   @Get()
   @RequirePermissions('vendors:vendors:read')
   @ApiOperation({ summary: 'List vendors' })
@@ -122,4 +130,58 @@ export class VendorsController {
     );
     return { data: assessments };
   }
+
+  // ---------------------------------------------------------------------------
+  // Data Access
+  // ---------------------------------------------------------------------------
+
+  @Get(':id/data-access')
+  @RequirePermissions('vendors:vendors:read')
+  @ApiOperation({ summary: 'Get vendor data access mappings' })
+  async getVendorDataAccess(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.vendorsService.getVendorDataAccess(tenantId, id);
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Security Posture
+  // ---------------------------------------------------------------------------
+
+  @Get(':id/security-posture')
+  @RequirePermissions('vendors:vendors:read')
+  @ApiOperation({ summary: 'Assess vendor security posture' })
+  async assessSecurityPosture(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const posture = await this.vendorsService.assessSecurityPosture(
+      tenantId,
+      id,
+    );
+    return { data: posture };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Monitor Vendor
+  // ---------------------------------------------------------------------------
+
+  @Post(':id/monitor')
+  @RequirePermissions('vendors:vendors:update')
+  @ApiOperation({ summary: 'Enable or disable vendor monitoring' })
+  async monitorVendor(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+    @Body('enable') enable: boolean,
+  ) {
+    const vendor = await this.vendorsService.monitorVendor(
+      tenantId,
+      id,
+      enable,
+    );
+    return { data: vendor };
+  }
+
 }

@@ -10,7 +10,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DiscoveryService } from './discovery.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
-import { StartScanDto } from './dto/discovery.dto';
+import { StartScanDto, EnrichAssetMetadataDto } from './dto/discovery.dto';
 
 @ApiTags('Discovery')
 @ApiBearerAuth()
@@ -76,5 +76,55 @@ export class DiscoveryController {
   ) {
     const asset = await this.discoveryService.findAssetById(tenantId, id);
     return { data: asset };
+  }
+
+  @Get('shadow-data')
+  @RequirePermissions('discovery:assets:read')
+  @ApiOperation({ summary: 'Discover and flag shadow data assets' })
+  async discoverShadowData(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('data_source_id') dataSourceId?: string,
+  ) {
+    const summary = await this.discoveryService.discoverShadowData(
+      tenantId,
+      dataSourceId,
+    );
+    return { data: summary, count: summary.count };
+  }
+
+  @Get('ai-datasets')
+  @RequirePermissions('discovery:assets:read')
+  @ApiOperation({ summary: 'Discover assets matching AI/ML dataset patterns' })
+  async discoverAiDatasets(
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const datasets = await this.discoveryService.discoverAiDatasets(tenantId);
+    return { data: datasets };
+  }
+
+  @Post('assets/:id/enrich')
+  @RequirePermissions('discovery:assets:update')
+  @ApiOperation({ summary: 'Enrich asset metadata with ownership and security info' })
+  async enrichAssetMetadata(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') assetId: string,
+    @Body() dto: EnrichAssetMetadataDto,
+  ) {
+    const asset = await this.discoveryService.enrichAssetMetadata(
+      tenantId,
+      assetId,
+      dto,
+    );
+    return { data: asset };
+  }
+
+  @Get('duplicates')
+  @RequirePermissions('discovery:assets:read')
+  @ApiOperation({ summary: 'Detect duplicate assets by fingerprint' })
+  async detectDuplicates(
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const groups = await this.discoveryService.detectDuplicates(tenantId);
+    return { data: groups };
   }
 }

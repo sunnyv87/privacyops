@@ -374,6 +374,323 @@ export class ComplianceService {
     return evidence;
   }
 
+  // ---------------------------------------------------------------------------
+  // Detect Gaps
+  // ---------------------------------------------------------------------------
+
+  async detectGaps(tenantId: string, regulationId: string) {
+    const regulation = await this.prisma.regulation.findFirst({
+      where: {
+        id: regulationId,
+        OR: [{ tenantId }, { tenantId: null }],
+      },
+      include: {
+        obligations: {
+          include: {
+            controls: true,
+          },
+        },
+      },
+    });
+
+    if (!regulation) {
+      throw new NotFoundException(`Regulation ${regulationId} not found`);
+    }
+
+    const gaps: any[] = [];
+
+    for (const obligation of regulation.obligations) {
+      if (obligation.controls.length === 0) {
+        gaps.push({
+          tenantId,
+          regulationId,
+          obligationId: obligation.id,
+          obligationReference: obligation.reference,
+          obligationTitle: obligation.title,
+          severity: obligation.priority || 'medium',
+          status: 'open',
+          detectedAt: new Date(),
+        });
+      }
+    }
+
+    if (gaps.length > 0) {
+      await this.prisma.controlGap.createMany({
+        data: gaps,
+      });
+    }
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'system',
+      action: 'compliance.gaps_detected',
+      entityType: 'regulation',
+      entityId: regulationId,
+      changes: {
+        after: {
+          regulationName: regulation.shortName,
+          totalGaps: gaps.length,
+        },
+      },
+    });
+
+    this.logger.log(
+      `Detected ${gaps.length} compliance gaps for regulation ${regulation.shortName}`,
+    );
+
+    return {
+      regulationId,
+      regulationName: regulation.shortName,
+      totalGaps: gaps.length,
+      gaps,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auto-Collect Evidence
+  // ---------------------------------------------------------------------------
+
+  async autoCollectEvidence(tenantId: string, controlId: string) {
+    const control = await this.prisma.control.findFirst({
+      where: {
+        id: controlId,
+        OR: [{ tenantId }, { tenantId: null }],
+      },
+    });
+
+    if (!control) {
+      throw new NotFoundException(`Control ${controlId} not found`);
+    }
+
+    const automatedCheck = (control.automatedCheck as Record<string, any>) || {};
+    const checkType = automatedCheck.type || 'manual';
+
+    let checkResult: Record<string, any> = {};
+    let checkEvidence: Record<string, any> = {};
+
+    // Execute automated checks based on type
+    switch (checkType) {
+      case 'audit_log_count': {
+        const count = await this.prisma.auditLog.count({
+          where: { tenantId },
+        });
+        checkResult = { type: 'audit_log_count', count, passed: count > 0 };
+        checkEvidence = { auditLogCount: count, checkedAt: new Date().toISOString() };
+        break;
+      }
+      case 'encryption_status': {
+        // Check if encryption-related controls exist and are implemented
+        const encryptionControls = await this.prisma.control.count({
+          where: {
+            OR: [{ tenantId }, { tenantId: null }],
+            category: 'encryption',
+            implementationStatus: 'implemented',
+          },
+        });
+        checkResult = {
+          type: 'encryption_status',
+          implementedControls: encryptionControls,
+          passed: encryptionControls > 0,
+        };
+        checkEvidence = {
+          encryptionControlCount: encryptionControls,
+          checkedAt: new Date().toISOString(),
+        };
+        break;
+      }
+      default: {
+        checkResult = {
+          type: 'manual',
+          message: 'No automated check configured',
+          passed: false,
+        };
+        checkEvidence = { checkedAt: new Date().toISOString() };
+      }
+    }
+
+    await this.prisma.control.update({
+      where: { id: controlId },
+      data: {
+        checkResult,
+        checkEvidence,
+        lastCheckedAt: new Date(),
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'system',
+      action: 'compliance.evidence_collected',
+      entityType: 'control',
+      entityId: controlId,
+      changes: {
+        after: { checkType, checkResult },
+      },
+    });
+
+    this.logger.log(
+      `Auto-collected evidence for control ${controlId} (type: ${checkType})`,
+    );
+
+    return {
+      controlId,
+      checkType,
+      checkResult,
+      checkEvidence,
+      lastCheckedAt: new Date(),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Map Cross-Regulation
+  // ---------------------------------------------------------------------------
+
+  async mapCrossRegulation(tenantId: string) {
+    const controls = await this.prisma.control.findMany({
+      where: {
+        OR: [{ tenantId }, { tenantId: null }],
+      },
+      include: {
+        obligations: {
+          include: {
+            obligation: {
+              include: {
+                regulation: {
+                  select: { id: true, shortName: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const crossMapped = controls
+      .filter((control) => {
+        const regulations = new Set(
+          control.obligations.map(
+            (oc) => oc.obligation.regulation?.id,
+          ),
+        );
+        return regulations.size > 1;
+      })
+      .map((control) => {
+        const regulations = control.obligations
+          .map((oc) => ({
+            regulationId: oc.obligation.regulation?.id,
+            regulationName: oc.obligation.regulation?.shortName,
+            obligationId: oc.obligation.id,
+            obligationReference: oc.obligation.reference,
+          }))
+          .filter((r) => r.regulationId);
+
+        // Deduplicate regulations
+        const uniqueRegulations = Array.from(
+          new Map(
+            regulations.map((r) => [r.regulationId, r]),
+          ).values(),
+        );
+
+        return {
+          controlId: control.id,
+          controlCode: control.code,
+          controlTitle: control.title,
+          regulations: uniqueRegulations,
+          regulationCount: uniqueRegulations.length,
+        };
+      });
+
+    return {
+      totalCrossMappedControls: crossMapped.length,
+      controls: crossMapped,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Import Framework
+  // ---------------------------------------------------------------------------
+
+  async importFramework(dto: {
+    name: string;
+    shortName: string;
+    version: string;
+    obligations?: any[];
+  }) {
+    const framework = await this.prisma.complianceFramework.create({
+      data: {
+        name: dto.name,
+        shortName: dto.shortName,
+        version: dto.version,
+        obligations: dto.obligations || [],
+        status: 'active',
+      },
+    });
+
+    this.logger.log(`Compliance framework "${dto.shortName}" imported`);
+
+    return framework;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Find Frameworks
+  // ---------------------------------------------------------------------------
+
+  async findFrameworks() {
+    return this.prisma.complianceFramework.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Find Gaps (paginated)
+  // ---------------------------------------------------------------------------
+
+  async findGaps(
+    tenantId: string,
+    filters?: {
+      regulationId?: string;
+      severity?: string;
+      status?: string;
+      page?: number;
+      pageSize?: number;
+    },
+  ) {
+    const page = filters?.page ?? 1;
+    const pageSize = filters?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {
+      tenantId,
+      ...(filters?.regulationId && { regulationId: filters.regulationId }),
+      ...(filters?.severity && { severity: filters.severity }),
+      ...(filters?.status && { status: filters.status }),
+    };
+
+    const [data, totalItems] = await Promise.all([
+      this.prisma.controlGap.findMany({
+        where,
+        orderBy: { detectedAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.controlGap.count({ where }),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scorecard
+  // ---------------------------------------------------------------------------
+
   async getScorecard(tenantId: string) {
     const regulations = await this.findAllRegulations(tenantId);
 

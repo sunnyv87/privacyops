@@ -307,6 +307,138 @@ export class ClassificationService {
     });
   }
 
+  async bulkClassify(tenantId: string, assetIds: string[], userId?: string) {
+    let classified = 0;
+    const errors: { assetId: string; error: string }[] = [];
+
+    for (const assetId of assetIds) {
+      try {
+        await this.classifyAsset(tenantId, userId || 'system', {
+          assetId,
+        });
+        classified++;
+      } catch (error) {
+        errors.push({
+          assetId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        this.logger.warn(`Bulk classify failed for asset ${assetId}: ${error}`);
+      }
+    }
+
+    this.logger.log(
+      `Bulk classification for tenant ${tenantId}: ${classified}/${assetIds.length} classified, ${errors.length} error(s)`,
+    );
+
+    return {
+      total: assetIds.length,
+      classified,
+      errors,
+    };
+  }
+
+  async getClassificationCoverage(tenantId: string) {
+    const [totalAssets, classifiedAssetGroups] = await Promise.all([
+      this.prisma.asset.count({
+        where: { tenantId, deletedAt: null },
+      }),
+      this.prisma.classification.groupBy({
+        by: ['assetId'],
+        where: { tenantId },
+      }),
+    ]);
+
+    const classifiedAssets = classifiedAssetGroups.length;
+    const coveragePercent =
+      totalAssets > 0
+        ? Math.round((classifiedAssets / totalAssets) * 10000) / 100
+        : 0;
+
+    // Coverage by category
+    const categoryGroups = await this.prisma.classification.findMany({
+      where: { tenantId },
+      select: {
+        assetId: true,
+        label: { select: { category: true } },
+      },
+    });
+
+    const byCategory: Record<string, { assetCount: number; classificationCount: number }> = {};
+    const categoryAssetSets: Record<string, Set<string>> = {};
+
+    for (const c of categoryGroups) {
+      const cat = c.label.category;
+      if (!byCategory[cat]) {
+        byCategory[cat] = { assetCount: 0, classificationCount: 0 };
+        categoryAssetSets[cat] = new Set();
+      }
+      byCategory[cat].classificationCount++;
+      categoryAssetSets[cat].add(c.assetId);
+    }
+
+    for (const cat of Object.keys(byCategory)) {
+      byCategory[cat].assetCount = categoryAssetSets[cat].size;
+    }
+
+    return {
+      totalAssets,
+      classifiedAssets,
+      coveragePercent,
+      byCategory,
+    };
+  }
+
+  async getToxicCombinations(tenantId: string) {
+    const classifications = await this.prisma.classification.findMany({
+      where: { tenantId },
+      include: {
+        label: { select: { name: true, category: true } },
+        asset: { select: { id: true, name: true } },
+      },
+    });
+
+    // Group by asset
+    const assetMap = new Map<
+      string,
+      {
+        assetName: string;
+        labels: { labelName: string; category: string }[];
+      }
+    >();
+
+    for (const c of classifications) {
+      const existing = assetMap.get(c.assetId) || {
+        assetName: c.asset.name,
+        labels: [],
+      };
+      existing.labels.push({
+        labelName: c.label.name,
+        category: c.label.category,
+      });
+      assetMap.set(c.assetId, existing);
+    }
+
+    // Detect toxic combinations per asset
+    const results: {
+      assetId: string;
+      assetName: string;
+      combinations: string[];
+    }[] = [];
+
+    for (const [assetId, data] of assetMap) {
+      const combinations = this.classifier.detectToxicCombinations(data.labels);
+      if (combinations.length > 0) {
+        results.push({
+          assetId,
+          assetName: data.assetName,
+          combinations,
+        });
+      }
+    }
+
+    return results;
+  }
+
   async getStats(tenantId: string) {
     const [
       byCategory,

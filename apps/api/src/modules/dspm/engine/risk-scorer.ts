@@ -117,6 +117,125 @@ export class RiskScorer {
     };
   }
 
+  vendorExposureScore(input: {
+    vendorCount: number;
+    highRiskVendors: number;
+    dataSharedTypes: number;
+  }): number {
+    let score = 0;
+
+    // Base score from vendor count (0-10)
+    if (input.vendorCount > 20) score += 10;
+    else if (input.vendorCount > 10) score += 7;
+    else if (input.vendorCount > 5) score += 4;
+    else if (input.vendorCount > 0) score += 2;
+
+    // High-risk vendor penalty (0-10)
+    if (input.highRiskVendors > 5) score += 10;
+    else if (input.highRiskVendors > 2) score += 7;
+    else if (input.highRiskVendors > 0) score += 4;
+
+    // Data shared diversity (0-5)
+    if (input.dataSharedTypes > 10) score += 5;
+    else if (input.dataSharedTypes > 5) score += 3;
+    else if (input.dataSharedTypes > 0) score += 1;
+
+    return Math.min(25, score);
+  }
+
+  aiUsageScore(input: {
+    isAiDataset: boolean;
+    hasConsent: boolean;
+    modelCount: number;
+  }): number {
+    let score = 0;
+
+    if (input.isAiDataset) {
+      score += 10;
+
+      if (!input.hasConsent) {
+        score += 6;
+      }
+
+      // Model exposure (0-4)
+      if (input.modelCount > 5) score += 4;
+      else if (input.modelCount > 2) score += 3;
+      else if (input.modelCount > 0) score += 1;
+    }
+
+    return Math.min(20, score);
+  }
+
+  identityAccessScore(input: {
+    principalCount: number;
+    publicAccess: boolean;
+    excessivePermissions: number;
+    inactiveAccess: number;
+  }): number {
+    let score = 0;
+
+    // Public access is maximum risk
+    if (input.publicAccess) {
+      score += 10;
+    }
+
+    // Principal count breadth (0-5)
+    if (input.principalCount > 50) score += 5;
+    else if (input.principalCount > 20) score += 4;
+    else if (input.principalCount > 10) score += 3;
+    else if (input.principalCount > 5) score += 2;
+
+    // Excessive permissions (0-5)
+    if (input.excessivePermissions > 10) score += 5;
+    else if (input.excessivePermissions > 5) score += 4;
+    else if (input.excessivePermissions > 0) score += 2;
+
+    // Inactive access (0-5)
+    if (input.inactiveAccess > 10) score += 5;
+    else if (input.inactiveAccess > 5) score += 3;
+    else if (input.inactiveAccess > 0) score += 1;
+
+    return Math.min(25, score);
+  }
+
+  retentionViolationScore(input: {
+    hasPolicy: boolean;
+    isOverdue: boolean;
+    daysPastExpiry: number;
+  }): number {
+    let score = 0;
+
+    if (!input.hasPolicy) {
+      score += 5;
+    }
+
+    if (input.isOverdue) {
+      score += 5;
+
+      if (input.daysPastExpiry > 365) score += 5;
+      else if (input.daysPastExpiry > 90) score += 3;
+      else if (input.daysPastExpiry > 30) score += 2;
+    }
+
+    return Math.min(15, score);
+  }
+
+  securityMisconfigScore(input: {
+    unencrypted: boolean;
+    publiclyAccessible: boolean;
+    noMfa: boolean;
+    noAuditTrail: boolean;
+  }): number {
+    let score = 0;
+
+    if (input.unencrypted) score += 4;
+    if (input.publiclyAccessible) score += 5;
+    if (input.noMfa) score += 3;
+    if (input.noAuditTrail) score += 3;
+
+    return Math.min(15, score);
+  }
+
   private scoreToSeverity(
     score: number,
   ): 'critical' | 'high' | 'medium' | 'low' | 'info' {

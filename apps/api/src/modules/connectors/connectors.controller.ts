@@ -66,6 +66,16 @@ export class ConnectorsController {
     return { data: this.connectorsService.getAvailableConnectors() };
   }
 
+  @Get('health')
+  @RequirePermissions('dspm:connectors:read')
+  @ApiOperation({ summary: 'Get health summary of all connectors' })
+  async getHealthSummary(
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const summary = await this.connectorsService.getHealthSummary(tenantId);
+    return { data: summary };
+  }
+
   @Get(':id')
   @RequirePermissions('dspm:connectors:read')
   @ApiOperation({ summary: 'Get connector details' })
@@ -104,6 +114,18 @@ export class ConnectorsController {
     @Param('id') id: string,
   ) {
     const result = await this.connectorsService.testConnection(tenantId, id);
+    return { data: result };
+  }
+
+  @Post(':id/health')
+  @RequirePermissions('dspm:connectors:update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Run health check on a connector' })
+  async healthCheck(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.connectorsService.healthCheck(tenantId, id);
     return { data: result };
   }
 

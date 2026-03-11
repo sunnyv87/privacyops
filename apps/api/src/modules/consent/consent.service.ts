@@ -454,6 +454,154 @@ export class ConsentService {
   // Statistics
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // Preference Center
+  // ---------------------------------------------------------------------------
+
+  async getPreferenceCenter(tenantId: string, dataSubjectId: string) {
+    const dataSubject = await this.prisma.dataSubject.findFirst({
+      where: { id: dataSubjectId, tenantId },
+    });
+
+    if (!dataSubject) {
+      throw new NotFoundException(`Data subject ${dataSubjectId} not found`);
+    }
+
+    const records = await this.prisma.consentRecord.findMany({
+      where: { tenantId, dataSubjectId },
+      include: { purpose: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Group by purposeId, taking the most recent record per purpose
+    const purposeMap = new Map<string, any>();
+    for (const record of records) {
+      if (!purposeMap.has(record.purposeId)) {
+        purposeMap.set(record.purposeId, {
+          purposeId: record.purposeId,
+          name: record.purpose?.name || record.purposeId,
+          status: record.status,
+          grantedAt: record.grantedAt,
+          expiresAt: record.expiresAt,
+        });
+      }
+    }
+
+    return { purposes: Array.from(purposeMap.values()) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Consent by Jurisdiction
+  // ---------------------------------------------------------------------------
+
+  async getConsentByJurisdiction(tenantId: string) {
+    const records = await this.prisma.consentRecord.findMany({
+      where: { tenantId },
+      select: { jurisdiction: true, status: true },
+    });
+
+    const jurisdictionMap: Record<
+      string,
+      { total: number; granted: number; revoked: number }
+    > = {};
+
+    for (const record of records) {
+      const jurisdiction = (record.jurisdiction as string) || 'unknown';
+      if (!jurisdictionMap[jurisdiction]) {
+        jurisdictionMap[jurisdiction] = { total: 0, granted: 0, revoked: 0 };
+      }
+      jurisdictionMap[jurisdiction].total++;
+      if (record.status === 'granted') jurisdictionMap[jurisdiction].granted++;
+      if (record.status === 'revoked') jurisdictionMap[jurisdiction].revoked++;
+    }
+
+    return {
+      jurisdictions: Object.entries(jurisdictionMap).map(
+        ([jurisdiction, counts]) => ({
+          jurisdiction,
+          ...counts,
+        }),
+      ),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Link Consent Purpose to RoPA
+  // ---------------------------------------------------------------------------
+
+  async linkToRopa(tenantId: string, purposeId: string, ropaId: string) {
+    const purpose = await this.prisma.processingPurpose.findFirst({
+      where: { id: purposeId, tenantId },
+    });
+
+    if (!purpose) {
+      throw new NotFoundException(`Processing purpose ${purposeId} not found`);
+    }
+
+    const updated = await this.prisma.processingPurpose.update({
+      where: { id: purposeId },
+      data: { linkedRopaId: ropaId },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'processing_purpose.linked_to_ropa',
+      entityType: 'processing_purpose',
+      entityId: purposeId,
+      changes: {
+        before: { linkedRopaId: purpose.linkedRopaId },
+        after: { linkedRopaId: ropaId },
+      },
+    });
+
+    await this.events.publish({
+      type: 'consent.purpose.linked_to_ropa',
+      tenantId,
+      data: { purposeId, ropaId },
+      timestamp: new Date(),
+    });
+
+    return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Consent Timeline
+  // ---------------------------------------------------------------------------
+
+  async getConsentTimeline(tenantId: string, dataSubjectId: string) {
+    const dataSubject = await this.prisma.dataSubject.findFirst({
+      where: { id: dataSubjectId, tenantId },
+    });
+
+    if (!dataSubject) {
+      throw new NotFoundException(`Data subject ${dataSubjectId} not found`);
+    }
+
+    const records = await this.prisma.consentRecord.findMany({
+      where: { tenantId, dataSubjectId },
+      include: {
+        notice: { select: { id: true, name: true } },
+        purpose: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return records.map((record) => ({
+      id: record.id,
+      status: record.status,
+      noticeName: record.notice?.name || null,
+      purposeName: record.purpose?.name || null,
+      grantedAt: record.grantedAt,
+      revokedAt: record.revokedAt,
+      createdAt: record.createdAt,
+    }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Statistics
+  // ---------------------------------------------------------------------------
+
   async getStats(tenantId: string) {
     const [totalRecords, byStatus, recentActivity] = await Promise.all([
       this.prisma.consentRecord.count({ where: { tenantId } }),

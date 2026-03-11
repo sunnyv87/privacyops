@@ -231,6 +231,283 @@ export class AssessmentsService {
   }
 
   // ---------------------------------------------------------------------------
+  // Check DPIA Triggers
+  // ---------------------------------------------------------------------------
+
+  async checkTriggers(
+    tenantId: string,
+    context: {
+      dataCategories?: string[];
+      subjectCount?: number;
+      crossBorder?: boolean;
+      aiUsage?: boolean;
+    },
+  ) {
+    const rules = await this.prisma.dpiaTriggerRule.findMany({
+      where: { tenantId, isActive: true },
+    });
+
+    const matchedRules: any[] = [];
+
+    for (const rule of rules) {
+      const condition = rule.condition as Record<string, any>;
+      let matched = false;
+
+      if (
+        condition.dataCategories &&
+        context.dataCategories?.some((c) =>
+          (condition.dataCategories as string[]).includes(c),
+        )
+      ) {
+        matched = true;
+      }
+
+      if (
+        condition.minSubjectCount &&
+        context.subjectCount &&
+        context.subjectCount >= condition.minSubjectCount
+      ) {
+        matched = true;
+      }
+
+      if (condition.crossBorder && context.crossBorder) {
+        matched = true;
+      }
+
+      if (condition.aiUsage && context.aiUsage) {
+        matched = true;
+      }
+
+      if (matched) {
+        matchedRules.push({
+          ruleId: rule.id,
+          name: rule.name,
+          condition: rule.condition,
+        });
+      }
+    }
+
+    return {
+      triggered: matchedRules.length > 0,
+      matchedRules,
+      suggestedType:
+        matchedRules.length > 0 ? 'full_dpia' : 'screening',
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Calculate Privacy Risk
+  // ---------------------------------------------------------------------------
+
+  async calculatePrivacyRisk(tenantId: string, assessmentId: string) {
+    const assessment = await this.prisma.privacyAssessment.findFirst({
+      where: { id: assessmentId, tenantId, deletedAt: null },
+    });
+
+    if (!assessment) {
+      throw new NotFoundException(`Assessment ${assessmentId} not found`);
+    }
+
+    let score = 0;
+    const dataCategories = (assessment.dataCategories as string[]) || [];
+
+    // Score based on data categories
+    const sensitiveCategories = [
+      'health',
+      'biometric',
+      'genetic',
+      'racial',
+      'political',
+      'religious',
+      'sexual_orientation',
+    ];
+    const hasSensitive = dataCategories.some((c) =>
+      sensitiveCategories.includes(c),
+    );
+    if (hasSensitive) score += 30;
+    if (dataCategories.length > 5) score += 10;
+
+    // Score based on processing description (proxy for volume)
+    const description = assessment.processingDescription || '';
+    if (description.toLowerCase().includes('large scale')) score += 20;
+    if (description.toLowerCase().includes('systematic')) score += 10;
+
+    // Score based on cross-border indicators
+    if (description.toLowerCase().includes('cross-border')) score += 15;
+    if (description.toLowerCase().includes('international')) score += 15;
+
+    // Cap at 100
+    score = Math.min(score, 100);
+
+    // Derive risk level
+    let riskLevel: string;
+    if (score >= 75) riskLevel = 'critical';
+    else if (score >= 50) riskLevel = 'high';
+    else if (score >= 25) riskLevel = 'medium';
+    else riskLevel = 'low';
+
+    await this.prisma.privacyAssessment.update({
+      where: { id: assessmentId },
+      data: {
+        privacyRiskScore: score,
+        overallRiskScore: score,
+        overallRiskLevel: riskLevel,
+      },
+    });
+
+    return {
+      assessmentId,
+      privacyRiskScore: score,
+      riskLevel,
+      factors: {
+        sensitiveData: hasSensitive,
+        dataCategoryCount: dataCategories.length,
+        crossBorderIndicators:
+          description.toLowerCase().includes('cross-border') ||
+          description.toLowerCase().includes('international'),
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Link to Processing (RoPA)
+  // ---------------------------------------------------------------------------
+
+  async linkToProcessing(
+    tenantId: string,
+    assessmentId: string,
+    ropaId: string,
+  ) {
+    const assessment = await this.prisma.privacyAssessment.findFirst({
+      where: { id: assessmentId, tenantId, deletedAt: null },
+    });
+
+    if (!assessment) {
+      throw new NotFoundException(`Assessment ${assessmentId} not found`);
+    }
+
+    const updated = await this.prisma.privacyAssessment.update({
+      where: { id: assessmentId },
+      data: { linkedRopaId: ropaId },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'assessment.linked_to_ropa',
+      entityType: 'privacy_assessment',
+      entityId: assessmentId,
+      changes: {
+        before: { linkedRopaId: assessment.linkedRopaId },
+        after: { linkedRopaId: ropaId },
+      },
+    });
+
+    return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // DPIA Trigger Rules CRUD
+  // ---------------------------------------------------------------------------
+
+  async createTriggerRule(
+    tenantId: string,
+    dto: { name: string; condition: any; isActive?: boolean },
+  ) {
+    const rule = await this.prisma.dpiaTriggerRule.create({
+      data: {
+        tenantId,
+        name: dto.name,
+        condition: dto.condition,
+        isActive: dto.isActive ?? true,
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'dpia_trigger_rule.created',
+      entityType: 'dpia_trigger_rule',
+      entityId: rule.id,
+      changes: { after: dto },
+    });
+
+    return rule;
+  }
+
+  async findTriggerRules(tenantId: string) {
+    return this.prisma.dpiaTriggerRule.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async updateTriggerRule(
+    tenantId: string,
+    ruleId: string,
+    dto: { name?: string; condition?: any; isActive?: boolean },
+  ) {
+    const existing = await this.prisma.dpiaTriggerRule.findFirst({
+      where: { id: ruleId, tenantId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Trigger rule ${ruleId} not found`);
+    }
+
+    const updated = await this.prisma.dpiaTriggerRule.update({
+      where: { id: ruleId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.condition !== undefined && { condition: dto.condition }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'dpia_trigger_rule.updated',
+      entityType: 'dpia_trigger_rule',
+      entityId: ruleId,
+      changes: {
+        before: existing,
+        after: updated,
+      },
+    });
+
+    return updated;
+  }
+
+  async deleteTriggerRule(tenantId: string, ruleId: string) {
+    const existing = await this.prisma.dpiaTriggerRule.findFirst({
+      where: { id: ruleId, tenantId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Trigger rule ${ruleId} not found`);
+    }
+
+    await this.prisma.dpiaTriggerRule.delete({
+      where: { id: ruleId },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorType: 'user',
+      action: 'dpia_trigger_rule.deleted',
+      entityType: 'dpia_trigger_rule',
+      entityId: ruleId,
+      changes: {
+        before: existing,
+        after: null,
+      },
+    });
+
+    return { deleted: true };
+  }
+
+  // ---------------------------------------------------------------------------
   // Statistics
   // ---------------------------------------------------------------------------
 

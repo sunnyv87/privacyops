@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -36,6 +37,59 @@ export class IncidentsController {
       dto,
     );
     return { data: incident };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Detection Rules
+  // ---------------------------------------------------------------------------
+
+  @Post('detection-rules')
+  @RequirePermissions('incidents:incidents:create')
+  @ApiOperation({ summary: 'Create a breach detection rule' })
+  async createDetectionRule(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body() dto: { name: string; condition: any; isActive?: boolean },
+  ) {
+    const rule = await this.incidentsService.createDetectionRule(tenantId, dto);
+    return { data: rule };
+  }
+
+  @Get('detection-rules')
+  @RequirePermissions('incidents:incidents:read')
+  @ApiOperation({ summary: 'List breach detection rules' })
+  async findDetectionRules(@CurrentUser('tenantId') tenantId: string) {
+    const rules = await this.incidentsService.findDetectionRules(tenantId);
+    return { data: rules };
+  }
+
+  @Put('detection-rules/:id')
+  @RequirePermissions('incidents:incidents:update')
+  @ApiOperation({ summary: 'Update a breach detection rule' })
+  async updateDetectionRule(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+    @Body() dto: { name?: string; condition?: any; isActive?: boolean },
+  ) {
+    const rule = await this.incidentsService.updateDetectionRule(
+      tenantId,
+      id,
+      dto,
+    );
+    return { data: rule };
+  }
+
+  @Delete('detection-rules/:id')
+  @RequirePermissions('incidents:incidents:delete')
+  @ApiOperation({ summary: 'Delete a breach detection rule' })
+  async deleteDetectionRule(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.incidentsService.deleteDetectionRule(
+      tenantId,
+      id,
+    );
+    return { data: result };
   }
 
   @Get('stats')
@@ -93,5 +147,45 @@ export class IncidentsController {
       dto,
     );
     return { data: incident };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notifications
+  // ---------------------------------------------------------------------------
+
+  @Get(':id/notifications')
+  @RequirePermissions('incidents:incidents:read')
+  @ApiOperation({ summary: 'Track notifications for an incident' })
+  async trackNotifications(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.incidentsService.trackNotifications(tenantId, id);
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Impact
+  // ---------------------------------------------------------------------------
+
+  @Get(':id/impact')
+  @RequirePermissions('incidents:incidents:read')
+  @ApiOperation({ summary: 'Get incident impact data including linked lineage' })
+  async getImpact(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const incident = await this.incidentsService.findById(tenantId, id);
+    return {
+      data: {
+        incidentId: incident.id,
+        severity: incident.severity,
+        isPersonalDataBreach: incident.isPersonalDataBreach,
+        estimatedSubjectsAffected: incident.estimatedSubjectsAffected,
+        affectedAssets: incident.affectedAssets,
+        containedAt: incident.containedAt,
+        resolvedAt: incident.resolvedAt,
+      },
+    };
   }
 }

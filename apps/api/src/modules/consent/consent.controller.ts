@@ -173,6 +173,76 @@ export class ConsentController {
   }
 
   // ---------------------------------------------------------------------------
+  // Preference Center
+  // ---------------------------------------------------------------------------
+
+  @Get('preference-center/:dataSubjectId')
+  @RequirePermissions('consent:read')
+  @ApiOperation({ summary: 'Get preference center for a data subject' })
+  async getPreferenceCenter(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('dataSubjectId') dataSubjectId: string,
+  ) {
+    const result = await this.consentService.getPreferenceCenter(
+      tenantId,
+      dataSubjectId,
+    );
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Jurisdictions
+  // ---------------------------------------------------------------------------
+
+  @Get('jurisdictions')
+  @RequirePermissions('consent:read')
+  @ApiOperation({ summary: 'Get consent records grouped by jurisdiction' })
+  async getConsentByJurisdiction(
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const result = await this.consentService.getConsentByJurisdiction(tenantId);
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Link to RoPA
+  // ---------------------------------------------------------------------------
+
+  @Post('link-ropa')
+  @RequirePermissions('consent:admin')
+  @ApiOperation({ summary: 'Link a processing purpose to a RoPA entry' })
+  async linkToRopa(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body('purposeId') purposeId: string,
+    @Body('ropaId') ropaId: string,
+  ) {
+    const result = await this.consentService.linkToRopa(
+      tenantId,
+      purposeId,
+      ropaId,
+    );
+    return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Consent Timeline
+  // ---------------------------------------------------------------------------
+
+  @Get('timeline/:dataSubjectId')
+  @RequirePermissions('consent:read')
+  @ApiOperation({ summary: 'Get consent timeline for a data subject' })
+  async getConsentTimeline(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('dataSubjectId') dataSubjectId: string,
+  ) {
+    const timeline = await this.consentService.getConsentTimeline(
+      tenantId,
+      dataSubjectId,
+    );
+    return { data: timeline };
+  }
+
+  // ---------------------------------------------------------------------------
   // Stats
   // ---------------------------------------------------------------------------
 

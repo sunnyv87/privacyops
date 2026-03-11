@@ -11,6 +11,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { VendorsService } from './vendors.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import {
+  CreateVendorDto,
+  UpdateVendorDto,
+  CreateVendorAssessmentDto,
+} from './dto/vendor.dto';
 
 @ApiTags('Vendors')
 @ApiBearerAuth()
@@ -24,10 +29,18 @@ export class VendorsController {
   async create(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: any,
+    @Body() dto: CreateVendorDto,
   ) {
     const vendor = await this.vendorsService.create(tenantId, userId, dto);
     return { data: vendor };
+  }
+
+  @Get('stats')
+  @RequirePermissions('vendors:vendors:read')
+  @ApiOperation({ summary: 'Get vendor statistics by risk tier' })
+  async getStats(@CurrentUser('tenantId') tenantId: string) {
+    const stats = await this.vendorsService.getStats(tenantId);
+    return { data: stats };
   }
 
   @Get()
@@ -35,14 +48,16 @@ export class VendorsController {
   @ApiOperation({ summary: 'List vendors' })
   async findAll(
     @CurrentUser('tenantId') tenantId: string,
-    @Query('risk_level') riskLevel?: string,
+    @Query('risk_tier') riskTier?: string,
+    @Query('status') status?: string,
     @Query('page') page?: number,
     @Query('page_size') pageSize?: number,
   ) {
     return this.vendorsService.findAll(tenantId, {
-      riskLevel,
-      page,
-      pageSize,
+      riskTier,
+      status,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
     });
   }
 
@@ -64,7 +79,7 @@ export class VendorsController {
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: UpdateVendorDto,
   ) {
     const vendor = await this.vendorsService.update(
       tenantId,
@@ -73,5 +88,38 @@ export class VendorsController {
       dto,
     );
     return { data: vendor };
+  }
+
+  @Post(':id/assessments')
+  @RequirePermissions('vendors:assessments:create')
+  @ApiOperation({ summary: 'Create a vendor assessment' })
+  async createAssessment(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') vendorId: string,
+    @Body() dto: CreateVendorAssessmentDto,
+  ) {
+    // Override vendorId from the route parameter
+    dto.vendorId = vendorId;
+    const assessment = await this.vendorsService.createAssessment(
+      tenantId,
+      userId,
+      dto,
+    );
+    return { data: assessment };
+  }
+
+  @Get(':id/assessments')
+  @RequirePermissions('vendors:assessments:read')
+  @ApiOperation({ summary: 'List assessments for a vendor' })
+  async findAssessments(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') vendorId: string,
+  ) {
+    const assessments = await this.vendorsService.findAssessments(
+      tenantId,
+      vendorId,
+    );
+    return { data: assessments };
   }
 }

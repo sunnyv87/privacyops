@@ -11,6 +11,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ComplianceService } from './compliance.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import {
+  CreateControlDto,
+  UpdateControlDto,
+  AddEvidenceDto,
+} from './dto/compliance.dto';
 
 @ApiTags('Compliance')
 @ApiBearerAuth()
@@ -18,59 +23,101 @@ import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 export class ComplianceController {
   constructor(private readonly complianceService: ComplianceService) {}
 
-  @Post('frameworks')
-  @RequirePermissions('compliance:frameworks:create')
-  @ApiOperation({ summary: 'Add a compliance framework' })
-  async create(
+  @Get('regulations')
+  @RequirePermissions('compliance:regulations:read')
+  @ApiOperation({ summary: 'List all regulations with compliance scores' })
+  async findAllRegulations(@CurrentUser('tenantId') tenantId: string) {
+    const regulations = await this.complianceService.findAllRegulations(tenantId);
+    return { data: regulations };
+  }
+
+  @Get('regulations/:id')
+  @RequirePermissions('compliance:regulations:read')
+  @ApiOperation({ summary: 'Get regulation with obligations' })
+  async findRegulationById(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+  ) {
+    const regulation = await this.complianceService.findRegulationById(
+      tenantId,
+      id,
+    );
+    return { data: regulation };
+  }
+
+  @Get('controls')
+  @RequirePermissions('compliance:controls:read')
+  @ApiOperation({ summary: 'List controls with obligation mapping' })
+  async findAllControls(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('regulation_id') regulationId?: string,
+    @Query('status') controlStatus?: string,
+    @Query('page') page?: number,
+    @Query('page_size') pageSize?: number,
+  ) {
+    return this.complianceService.findAllControls(tenantId, {
+      regulationId,
+      controlStatus,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
+  }
+
+  @Post('controls')
+  @RequirePermissions('compliance:controls:create')
+  @ApiOperation({ summary: 'Create a control mapped to obligations' })
+  async createControl(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: any,
+    @Body() dto: CreateControlDto,
   ) {
-    const framework = await this.complianceService.create(
+    const control = await this.complianceService.createControl(
       tenantId,
       userId,
       dto,
     );
-    return { data: framework };
+    return { data: control };
   }
 
-  @Get('frameworks')
-  @RequirePermissions('compliance:frameworks:read')
-  @ApiOperation({ summary: 'List compliance frameworks' })
-  async findAll(
-    @CurrentUser('tenantId') tenantId: string,
-    @Query('page') page?: number,
-    @Query('page_size') pageSize?: number,
-  ) {
-    return this.complianceService.findAll(tenantId, { page, pageSize });
-  }
-
-  @Get('frameworks/:id')
-  @RequirePermissions('compliance:frameworks:read')
-  @ApiOperation({ summary: 'Get compliance framework details' })
-  async findOne(
-    @CurrentUser('tenantId') tenantId: string,
-    @Param('id') id: string,
-  ) {
-    const framework = await this.complianceService.findById(tenantId, id);
-    return { data: framework };
-  }
-
-  @Put('frameworks/:id')
-  @RequirePermissions('compliance:frameworks:update')
-  @ApiOperation({ summary: 'Update a compliance framework' })
-  async update(
+  @Put('controls/:id')
+  @RequirePermissions('compliance:controls:update')
+  @ApiOperation({ summary: 'Update a control status' })
+  async updateControl(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: UpdateControlDto,
   ) {
-    const framework = await this.complianceService.update(
+    const control = await this.complianceService.updateControl(
       tenantId,
       id,
       userId,
       dto,
     );
-    return { data: framework };
+    return { data: control };
+  }
+
+  @Post('evidence')
+  @RequirePermissions('compliance:evidence:create')
+  @ApiOperation({ summary: 'Add evidence artifact to a control' })
+  async addEvidence(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: AddEvidenceDto,
+  ) {
+    const evidence = await this.complianceService.addEvidence(
+      tenantId,
+      userId,
+      dto,
+    );
+    return { data: evidence };
+  }
+
+  @Get('scorecard')
+  @RequirePermissions('compliance:scorecard:read')
+  @ApiOperation({ summary: 'Get compliance scorecard' })
+  async getScorecard(@CurrentUser('tenantId') tenantId: string) {
+    const scorecard = await this.complianceService.getScorecard(tenantId);
+    return { data: scorecard };
   }
 }

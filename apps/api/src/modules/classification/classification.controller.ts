@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Body,
   Param,
   Query,
@@ -11,6 +10,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ClassificationService } from './classification.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import {
+  ClassifyAssetDto,
+  CreateLabelDto,
+} from './dto/classification.dto';
 
 @ApiTags('Classification')
 @ApiBearerAuth()
@@ -20,59 +23,87 @@ export class ClassificationController {
     private readonly classificationService: ClassificationService,
   ) {}
 
-  @Post('rules')
-  @RequirePermissions('classification:rules:create')
-  @ApiOperation({ summary: 'Create a new classification rule' })
-  async create(
+  @Post('classify')
+  @RequirePermissions('classification:classify:execute')
+  @ApiOperation({ summary: 'Classify fields of an asset using the classification engine' })
+  async classifyAsset(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: any,
+    @Body() dto: ClassifyAssetDto,
   ) {
-    const rule = await this.classificationService.create(
+    const result = await this.classificationService.classifyAsset(
       tenantId,
       userId,
       dto,
     );
-    return { data: rule };
+    return { data: result };
   }
 
-  @Get('rules')
-  @RequirePermissions('classification:rules:read')
-  @ApiOperation({ summary: 'List classification rules' })
+  @Get('results')
+  @RequirePermissions('classification:results:read')
+  @ApiOperation({ summary: 'List classifications with filters' })
   async findAll(
     @CurrentUser('tenantId') tenantId: string,
+    @Query('asset_id') assetId?: string,
+    @Query('label_id') labelId?: string,
+    @Query('category') category?: string,
+    @Query('min_confidence') minConfidence?: number,
     @Query('page') page?: number,
     @Query('page_size') pageSize?: number,
   ) {
-    return this.classificationService.findAll(tenantId, { page, pageSize });
+    return this.classificationService.findAll(tenantId, {
+      assetId,
+      labelId,
+      category,
+      minConfidence: minConfidence ? Number(minConfidence) : undefined,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
   }
 
-  @Get('rules/:id')
-  @RequirePermissions('classification:rules:read')
-  @ApiOperation({ summary: 'Get classification rule details' })
-  async findOne(
+  @Get('assets/:assetId')
+  @RequirePermissions('classification:results:read')
+  @ApiOperation({ summary: 'Get all classifications for an asset' })
+  async findByAsset(
     @CurrentUser('tenantId') tenantId: string,
-    @Param('id') id: string,
+    @Param('assetId') assetId: string,
   ) {
-    const rule = await this.classificationService.findById(tenantId, id);
-    return { data: rule };
+    const classifications = await this.classificationService.findByAsset(
+      tenantId,
+      assetId,
+    );
+    return { data: classifications };
   }
 
-  @Put('rules/:id')
-  @RequirePermissions('classification:rules:update')
-  @ApiOperation({ summary: 'Update a classification rule' })
-  async update(
+  @Post('labels')
+  @RequirePermissions('classification:labels:create')
+  @ApiOperation({ summary: 'Create a custom classification label' })
+  async createLabel(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: CreateLabelDto,
   ) {
-    const rule = await this.classificationService.update(
+    const label = await this.classificationService.createLabel(
       tenantId,
-      id,
       userId,
       dto,
     );
-    return { data: rule };
+    return { data: label };
+  }
+
+  @Get('labels')
+  @RequirePermissions('classification:labels:read')
+  @ApiOperation({ summary: 'List all classification labels' })
+  async findAllLabels(@CurrentUser('tenantId') tenantId: string) {
+    const labels = await this.classificationService.findAllLabels(tenantId);
+    return { data: labels };
+  }
+
+  @Get('stats')
+  @RequirePermissions('classification:stats:read')
+  @ApiOperation({ summary: 'Get classification statistics' })
+  async getStats(@CurrentUser('tenantId') tenantId: string) {
+    const stats = await this.classificationService.getStats(tenantId);
+    return { data: stats };
   }
 }

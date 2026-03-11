@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -11,6 +12,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { RetentionService } from './retention.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import {
+  CreateRetentionPolicyDto,
+  UpdateRetentionPolicyDto,
+} from './dto/retention.dto';
 
 @ApiTags('Retention')
 @ApiBearerAuth()
@@ -24,7 +29,7 @@ export class RetentionController {
   async create(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: any,
+    @Body() dto: CreateRetentionPolicyDto,
   ) {
     const policy = await this.retentionService.create(tenantId, userId, dto);
     return { data: policy };
@@ -35,10 +40,17 @@ export class RetentionController {
   @ApiOperation({ summary: 'List data retention policies' })
   async findAll(
     @CurrentUser('tenantId') tenantId: string,
+    @Query('record_category') recordCategory?: string,
+    @Query('active_only') activeOnly?: string,
     @Query('page') page?: number,
     @Query('page_size') pageSize?: number,
   ) {
-    return this.retentionService.findAll(tenantId, { page, pageSize });
+    return this.retentionService.findAll(tenantId, {
+      recordCategory,
+      activeOnly: activeOnly === 'true' ? true : undefined,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
   }
 
   @Get('policies/:id')
@@ -59,7 +71,7 @@ export class RetentionController {
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: UpdateRetentionPolicyDto,
   ) {
     const policy = await this.retentionService.update(
       tenantId,
@@ -68,5 +80,33 @@ export class RetentionController {
       dto,
     );
     return { data: policy };
+  }
+
+  @Delete('policies/:id')
+  @RequirePermissions('retention:policies:delete')
+  @ApiOperation({ summary: 'Deactivate a retention policy' })
+  async delete(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    const policy = await this.retentionService.delete(tenantId, id, userId);
+    return { data: policy };
+  }
+
+  @Post('policies/:id/dispose')
+  @RequirePermissions('retention:policies:execute')
+  @ApiOperation({ summary: 'Trigger disposal workflow for expired data' })
+  async triggerDisposal(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    const result = await this.retentionService.triggerDisposal(
+      tenantId,
+      id,
+      userId,
+    );
+    return { data: result };
   }
 }

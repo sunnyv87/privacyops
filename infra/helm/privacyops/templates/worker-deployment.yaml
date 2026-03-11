@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-temporal-worker
+  labels:
+    app: {{ .Release.Name }}-temporal-worker
+spec:
+  replicas: {{ .Values.temporalWorker.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-temporal-worker
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-temporal-worker
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.temporalWorker.image.repository }}:{{ .Values.temporalWorker.image.tag }}"
+          command: {{ toJson .Values.temporalWorker.command }}
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingSecret }}
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: redis-url
+            - name: TEMPORAL_ADDRESS
+              value: {{ .Values.temporal.address | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: privacyops
+            - name: NATS_URL
+              value: {{ .Values.nats.url | quote }}
+          resources:
+            {{- toYaml .Values.temporalWorker.resources | nindent 12 }}
+---
+{{- if .Values.scanWorker.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Release.Name }}-scan-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Release.Name }}-temporal-worker
+  minReplicas: {{ .Values.scanWorker.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.scanWorker.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.scanWorker.autoscaling.targetCPUUtilization }}
+{{- end }}

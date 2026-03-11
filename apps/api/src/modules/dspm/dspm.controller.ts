@@ -1,8 +1,8 @@
 import {
   Controller,
   Get,
+  Patch,
   Post,
-  Put,
   Body,
   Param,
   Query,
@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DspmService } from './dspm.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import { FindingFilterDto, UpdateFindingStatusDto } from './dto/dspm.dto';
 
 @ApiTags('DSPM')
 @ApiBearerAuth()
@@ -18,50 +19,83 @@ import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 export class DspmController {
   constructor(private readonly dspmService: DspmService) {}
 
-  @Post('policies')
-  @RequirePermissions('dspm:policies:create')
-  @ApiOperation({ summary: 'Create a new data security policy' })
-  async create(
+  @Get('findings')
+  @RequirePermissions('dspm:findings:read')
+  @ApiOperation({ summary: 'List risk findings with filters' })
+  async findAllFindings(
     @CurrentUser('tenantId') tenantId: string,
-    @CurrentUser('id') userId: string,
-    @Body() dto: any,
-  ) {
-    const policy = await this.dspmService.create(tenantId, userId, dto);
-    return { data: policy };
-  }
-
-  @Get('policies')
-  @RequirePermissions('dspm:policies:read')
-  @ApiOperation({ summary: 'List data security policies' })
-  async findAll(
-    @CurrentUser('tenantId') tenantId: string,
+    @Query('severity') severity?: string,
+    @Query('status') status?: string,
+    @Query('asset_id') assetId?: string,
+    @Query('data_source_id') dataSourceId?: string,
+    @Query('min_score') minScore?: number,
     @Query('page') page?: number,
     @Query('page_size') pageSize?: number,
   ) {
-    return this.dspmService.findAll(tenantId, { page, pageSize });
+    return this.dspmService.findAllFindings(tenantId, {
+      severity,
+      status,
+      assetId,
+      dataSourceId,
+      minScore: minScore ? Number(minScore) : undefined,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
   }
 
-  @Get('policies/:id')
-  @RequirePermissions('dspm:policies:read')
-  @ApiOperation({ summary: 'Get data security policy details' })
-  async findOne(
+  @Get('findings/:id')
+  @RequirePermissions('dspm:findings:read')
+  @ApiOperation({ summary: 'Get risk finding details' })
+  async findFindingById(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
   ) {
-    const policy = await this.dspmService.findById(tenantId, id);
-    return { data: policy };
+    const finding = await this.dspmService.findFindingById(tenantId, id);
+    return { data: finding };
   }
 
-  @Put('policies/:id')
-  @RequirePermissions('dspm:policies:update')
-  @ApiOperation({ summary: 'Update a data security policy' })
-  async update(
+  @Patch('findings/:id/status')
+  @RequirePermissions('dspm:findings:update')
+  @ApiOperation({ summary: 'Update risk finding status' })
+  async updateFindingStatus(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: UpdateFindingStatusDto,
   ) {
-    const policy = await this.dspmService.update(tenantId, id, userId, dto);
-    return { data: policy };
+    const finding = await this.dspmService.updateFindingStatus(
+      tenantId,
+      id,
+      userId,
+      dto,
+    );
+    return { data: finding };
+  }
+
+  @Post('findings/:assetId/recalculate')
+  @RequirePermissions('dspm:findings:create')
+  @ApiOperation({ summary: 'Recalculate risk score for an asset' })
+  async recalculateRisk(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('assetId') assetId: string,
+  ) {
+    const result = await this.dspmService.recalculateRisk(tenantId, assetId);
+    return { data: result };
+  }
+
+  @Get('data-map')
+  @RequirePermissions('dspm:data-map:read')
+  @ApiOperation({ summary: 'Get data map visualization data' })
+  async getDataMap(@CurrentUser('tenantId') tenantId: string) {
+    const dataMap = await this.dspmService.getDataMap(tenantId);
+    return { data: dataMap };
+  }
+
+  @Get('stats')
+  @RequirePermissions('dspm:stats:read')
+  @ApiOperation({ summary: 'Get DSPM statistics and severity distribution' })
+  async getStats(@CurrentUser('tenantId') tenantId: string) {
+    const stats = await this.dspmService.getStats(tenantId);
+    return { data: stats };
   }
 }

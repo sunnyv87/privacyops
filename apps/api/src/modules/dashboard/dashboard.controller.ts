@@ -10,44 +10,55 @@ import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
-  @Get('summary')
-  @RequirePermissions('dashboard:summary:read')
-  @ApiOperation({ summary: 'Get privacy dashboard summary' })
-  async getSummary(@CurrentUser('tenantId') tenantId: string) {
-    const summary = await this.dashboardService.getSummary(tenantId);
-    return { data: summary };
+  @Get('stats')
+  @RequirePermissions('dashboard:stats:read')
+  @ApiOperation({ summary: 'Get KPI stats for the privacy dashboard' })
+  async getStats(@CurrentUser('tenantId') tenantId: string) {
+    const stats = await this.dashboardService.getStats(tenantId);
+    return { data: stats };
   }
 
-  @Get('metrics')
-  @RequirePermissions('dashboard:metrics:read')
-  @ApiOperation({ summary: 'Get privacy compliance metrics' })
-  async getMetrics(
+  @Get('risk-distribution')
+  @RequirePermissions('dashboard:risk:read')
+  @ApiOperation({ summary: 'Get risk findings distribution by severity' })
+  async getRiskDistribution(@CurrentUser('tenantId') tenantId: string) {
+    const distribution = await this.dashboardService.getRiskDistribution(tenantId);
+    return { data: distribution };
+  }
+
+  @Get('top-risky-assets')
+  @RequirePermissions('dashboard:risk:read')
+  @ApiOperation({ summary: 'Get top N risky assets' })
+  async getTopRiskyAssets(
     @CurrentUser('tenantId') tenantId: string,
-    @Query('period') period?: string,
+    @Query('limit') limit?: number,
   ) {
-    const metrics = await this.dashboardService.getMetrics(tenantId, period);
-    return { data: metrics };
+    const assets = await this.dashboardService.getTopRiskyAssets(
+      tenantId,
+      limit ? Number(limit) : undefined,
+    );
+    return { data: assets };
   }
 
-  @Get('alerts')
-  @RequirePermissions('dashboard:alerts:read')
-  @ApiOperation({ summary: 'Get active privacy alerts' })
-  async getAlerts(
-    @CurrentUser('tenantId') tenantId: string,
-    @Query('page') page?: number,
-    @Query('page_size') pageSize?: number,
-  ) {
-    return this.dashboardService.getAlerts(tenantId, { page, pageSize });
-  }
-
-  @Get('activity')
+  @Get('recent-activity')
   @RequirePermissions('dashboard:activity:read')
-  @ApiOperation({ summary: 'Get recent activity feed' })
-  async getActivity(
+  @ApiOperation({ summary: 'Get recent audit log activity' })
+  async getRecentActivity(
     @CurrentUser('tenantId') tenantId: string,
-    @Query('page') page?: number,
-    @Query('page_size') pageSize?: number,
+    @Query('limit') limit?: number,
   ) {
-    return this.dashboardService.getActivity(tenantId, { page, pageSize });
+    const activity = await this.dashboardService.getRecentActivity(
+      tenantId,
+      limit ? Number(limit) : undefined,
+    );
+    return { data: activity };
+  }
+
+  @Get('compliance-overview')
+  @RequirePermissions('dashboard:compliance:read')
+  @ApiOperation({ summary: 'Get compliance scores by regulation' })
+  async getComplianceOverview(@CurrentUser('tenantId') tenantId: string) {
+    const overview = await this.dashboardService.getComplianceOverview(tenantId);
+    return { data: overview };
   }
 }

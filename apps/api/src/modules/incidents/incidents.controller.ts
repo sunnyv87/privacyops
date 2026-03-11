@@ -11,6 +11,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { IncidentsService } from './incidents.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import {
+  CreateIncidentDto,
+  UpdateIncidentDto,
+} from './dto/incident.dto';
 
 @ApiTags('Incidents')
 @ApiBearerAuth()
@@ -24,7 +28,7 @@ export class IncidentsController {
   async create(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: any,
+    @Body() dto: CreateIncidentDto,
   ) {
     const incident = await this.incidentsService.create(
       tenantId,
@@ -34,6 +38,14 @@ export class IncidentsController {
     return { data: incident };
   }
 
+  @Get('stats')
+  @RequirePermissions('incidents:incidents:read')
+  @ApiOperation({ summary: 'Get incident statistics' })
+  async getStats(@CurrentUser('tenantId') tenantId: string) {
+    const stats = await this.incidentsService.getStats(tenantId);
+    return { data: stats };
+  }
+
   @Get()
   @RequirePermissions('incidents:incidents:read')
   @ApiOperation({ summary: 'List privacy incidents' })
@@ -41,12 +53,14 @@ export class IncidentsController {
     @CurrentUser('tenantId') tenantId: string,
     @Query('severity') severity?: string,
     @Query('status') status?: string,
+    @Query('breach_only') breachOnly?: string,
     @Query('page') page?: number,
     @Query('page_size') pageSize?: number,
   ) {
     return this.incidentsService.findAll(tenantId, {
       severity,
       status,
+      breachOnly: breachOnly === 'true',
       page,
       pageSize,
     });
@@ -70,7 +84,7 @@ export class IncidentsController {
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: UpdateIncidentDto,
   ) {
     const incident = await this.incidentsService.update(
       tenantId,

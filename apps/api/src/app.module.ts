@@ -9,6 +9,8 @@ import { TenantModule } from './core/tenant/tenant.module';
 import { AuditModule } from './core/audit/audit.module';
 import { EventsModule } from './core/events/events.module';
 import { SearchModule } from './core/search/search.module';
+import { WorkflowModule } from './core/workflow/workflow.module';
+import { NotificationsModule } from './core/notifications/notifications.module';
 
 // Guards
 import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
@@ -47,6 +49,8 @@ import { HealthModule } from './core/health/health.module';
     AuditModule,
     EventsModule,
     SearchModule,
+    WorkflowModule,
+    NotificationsModule,
     HealthModule,
 
     // Feature modules

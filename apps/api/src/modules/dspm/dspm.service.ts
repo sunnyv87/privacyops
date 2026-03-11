@@ -1,40 +1,375 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
+import { RiskScorer, RiskScoringInput } from './engine/risk-scorer';
+import { FindingFilterDto, UpdateFindingStatusDto } from './dto/dspm.dto';
 
 @Injectable()
 export class DspmService {
+  private readonly logger = new Logger(DspmService.name);
+  private readonly riskScorer = new RiskScorer();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly events: EventBusService,
   ) {}
 
-  async create(tenantId: string, userId: string, dto: any) {
-    // TODO: Implement DSPM policy creation
-    throw new Error('Not implemented');
-  }
-
-  async findAll(
+  async findAllFindings(
     tenantId: string,
-    filters?: { page?: number; pageSize?: number },
+    filters?: FindingFilterDto & { page?: number; pageSize?: number },
   ) {
-    const { page = 1, pageSize = 20 } = filters || {};
-    // TODO: Implement listing DSPM policies
+    const { page = 1, pageSize = 20, severity, status, assetId, dataSourceId, minScore } = filters || {};
+
+    const where: any = {
+      tenantId,
+      deletedAt: null,
+      ...(severity && { severity }),
+      ...(status && { status }),
+      ...(assetId && { assetId }),
+      ...(dataSourceId && { dataSourceId }),
+      ...(minScore !== undefined && { riskScore: { gte: minScore } }),
+    };
+
+    const [data, totalItems] = await Promise.all([
+      this.prisma.riskFinding.findMany({
+        where,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              dataSourceId: true,
+            },
+          },
+        },
+        orderBy: [{ riskScore: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.riskFinding.count({ where }),
+    ]);
+
     return {
-      data: [],
-      pagination: { page, pageSize, totalItems: 0, totalPages: 0 },
+      data,
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
     };
   }
 
-  async findById(tenantId: string, id: string) {
-    // TODO: Implement finding DSPM policy by ID
-    throw new NotFoundException(`DSPM policy ${id} not found`);
+  async findFindingById(tenantId: string, id: string) {
+    const finding = await this.prisma.riskFinding.findFirst({
+      where: { id, tenantId, deletedAt: null },
+      include: {
+        asset: {
+          include: {
+            classifications: {
+              include: { label: true },
+            },
+            fields: true,
+          },
+        },
+      },
+    });
+
+    if (!finding) {
+      throw new NotFoundException(`Risk finding ${id} not found`);
+    }
+
+    return finding;
   }
 
-  async update(tenantId: string, id: string, userId: string, dto: any) {
-    // TODO: Implement updating a DSPM policy
-    throw new Error('Not implemented');
+  async updateFindingStatus(
+    tenantId: string,
+    id: string,
+    actorId: string,
+    dto: UpdateFindingStatusDto,
+  ) {
+    const finding = await this.prisma.riskFinding.findFirst({
+      where: { id, tenantId, deletedAt: null },
+    });
+
+    if (!finding) {
+      throw new NotFoundException(`Risk finding ${id} not found`);
+    }
+
+    const previousStatus = finding.status;
+
+    const updated = await this.prisma.riskFinding.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        ...(dto.status === 'mitigated' && { resolvedAt: new Date() }),
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorId,
+      actorType: 'user',
+      action: 'finding.status_changed',
+      entityType: 'risk_finding',
+      entityId: id,
+      changes: {
+        before: { status: previousStatus },
+        after: { status: dto.status, note: dto.note },
+      },
+    });
+
+    await this.events.publish({
+      type: 'finding.status.changed',
+      tenantId,
+      data: {
+        findingId: id,
+        previousStatus,
+        newStatus: dto.status,
+        actorId,
+      },
+      timestamp: new Date(),
+    });
+
+    return updated;
+  }
+
+  async recalculateRisk(tenantId: string, assetId: string) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: assetId, tenantId, deletedAt: null },
+      include: {
+        classifications: {
+          include: { label: true },
+        },
+        fields: true,
+        dataSource: true,
+      },
+    });
+
+    if (!asset) {
+      throw new NotFoundException(`Asset ${assetId} not found`);
+    }
+
+    const maxSensitivity = asset.classifications.reduce(
+      (max, c) => Math.max(max, c.label.sensitivityLevel),
+      1,
+    );
+
+    const metadata = (asset.metadata as Record<string, any>) || {};
+    const dsMetadata = (asset.dataSource.metadata as Record<string, any>) || {};
+
+    const scoringInput: RiskScoringInput = {
+      sensitivityLevel: maxSensitivity,
+      isPubliclyAccessible: metadata.isPubliclyAccessible ?? false,
+      isCrossAccountAccessible: metadata.isCrossAccountAccessible ?? false,
+      principalCount: metadata.principalCount ?? 1,
+      hasEncryption: metadata.hasEncryption ?? dsMetadata.hasEncryption ?? true,
+      hasMfa: metadata.hasMfa ?? false,
+      rowCount: Number(asset.rowCountEstimate ?? 0),
+      isStale: asset.lastScannedAt
+        ? Date.now() - asset.lastScannedAt.getTime() > 90 * 24 * 60 * 60 * 1000
+        : false,
+      hasRetentionPolicy: metadata.hasRetentionPolicy ?? false,
+    };
+
+    const result = this.riskScorer.score(scoringInput);
+
+    // Update existing open findings for this asset or create new one
+    const existingFinding = await this.prisma.riskFinding.findFirst({
+      where: {
+        tenantId,
+        assetId,
+        source: 'dspm',
+        status: { in: ['open', 'acknowledged'] },
+        deletedAt: null,
+      },
+    });
+
+    let finding;
+    if (existingFinding) {
+      finding = await this.prisma.riskFinding.update({
+        where: { id: existingFinding.id },
+        data: {
+          riskScore: result.score,
+          severity: result.severity,
+          evidence: {
+            breakdown: result.breakdown,
+            factors: result.factors,
+          },
+        },
+      });
+    } else {
+      finding = await this.prisma.riskFinding.create({
+        data: {
+          tenantId,
+          source: 'dspm',
+          category: 'exposure',
+          severity: result.severity,
+          title: `Risk assessment for ${asset.name}`,
+          description: `Automated risk scoring identified ${result.factors.length} risk factor(s): ${result.factors.join('; ')}`,
+          assetId,
+          dataSourceId: asset.dataSourceId,
+          status: 'open',
+          riskScore: result.score,
+          remediationGuidance: this.generateRemediationGuidance(result.factors),
+          evidence: {
+            breakdown: result.breakdown,
+            factors: result.factors,
+          },
+        },
+      });
+
+      await this.events.publish({
+        type: 'finding.created',
+        tenantId,
+        data: { findingId: finding.id, severity: result.severity, assetId },
+        timestamp: new Date(),
+      });
+    }
+
+    await this.events.publish({
+      type: 'risk.score.changed',
+      tenantId,
+      data: {
+        assetId,
+        findingId: finding.id,
+        score: result.score,
+        severity: result.severity,
+      },
+      timestamp: new Date(),
+    });
+
+    return { finding, riskResult: result };
+  }
+
+  async getDataMap(tenantId: string) {
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: { tenantId, deletedAt: null },
+      include: {
+        assets: {
+          where: { deletedAt: null },
+          include: {
+            classifications: {
+              include: { label: true },
+            },
+            riskFindings: {
+              where: { deletedAt: null, status: { in: ['open', 'acknowledged'] } },
+              select: { id: true, severity: true, riskScore: true },
+            },
+          },
+        },
+      },
+    });
+
+    return dataSources.map((ds) => ({
+      dataSource: {
+        id: ds.id,
+        name: ds.name,
+        type: ds.type,
+        status: ds.status,
+      },
+      assets: ds.assets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        path: asset.path,
+        classifications: asset.classifications.map((c) => ({
+          labelId: c.labelId,
+          labelName: c.label.name,
+          category: c.label.category,
+          sensitivityLevel: c.label.sensitivityLevel,
+          confidence: c.confidence,
+        })),
+        riskSummary: {
+          findingCount: asset.riskFindings.length,
+          maxSeverity: this.getMaxSeverity(asset.riskFindings.map((f) => f.severity)),
+          maxScore: asset.riskFindings.reduce(
+            (max, f) => Math.max(max, Number(f.riskScore)),
+            0,
+          ),
+        },
+      })),
+    }));
+  }
+
+  async getStats(tenantId: string) {
+    const [severityDistribution, topRiskyAssets, statusDistribution] = await Promise.all([
+      this.prisma.riskFinding.groupBy({
+        by: ['severity'],
+        where: { tenantId, deletedAt: null, status: { in: ['open', 'acknowledged'] } },
+        _count: { id: true },
+      }),
+      this.prisma.riskFinding.findMany({
+        where: { tenantId, deletedAt: null, status: { in: ['open', 'acknowledged'] } },
+        orderBy: { riskScore: 'desc' },
+        take: 10,
+        include: {
+          asset: { select: { id: true, name: true, type: true } },
+        },
+      }),
+      this.prisma.riskFinding.groupBy({
+        by: ['status'],
+        where: { tenantId, deletedAt: null },
+        _count: { id: true },
+      }),
+    ]);
+
+    return {
+      severityDistribution: severityDistribution.map((s) => ({
+        severity: s.severity,
+        count: s._count.id,
+      })),
+      statusDistribution: statusDistribution.map((s) => ({
+        status: s.status,
+        count: s._count.id,
+      })),
+      topRiskyAssets: topRiskyAssets.map((f) => ({
+        findingId: f.id,
+        assetId: f.assetId,
+        assetName: f.asset?.name,
+        assetType: f.asset?.type,
+        riskScore: f.riskScore,
+        severity: f.severity,
+        title: f.title,
+      })),
+    };
+  }
+
+  private getMaxSeverity(severities: string[]): string | null {
+    const order = ['critical', 'high', 'medium', 'low', 'info'];
+    for (const level of order) {
+      if (severities.includes(level)) return level;
+    }
+    return null;
+  }
+
+  private generateRemediationGuidance(factors: string[]): string {
+    const guidance: string[] = [];
+    for (const factor of factors) {
+      if (factor.includes('Publicly accessible')) {
+        guidance.push('Restrict public access and implement network-level controls.');
+      }
+      if (factor.includes('No encryption')) {
+        guidance.push('Enable encryption at rest using a managed encryption key.');
+      }
+      if (factor.includes('No MFA')) {
+        guidance.push('Enforce multi-factor authentication for data access.');
+      }
+      if (factor.includes('Overly permissive')) {
+        guidance.push('Review and reduce IAM principal access to least privilege.');
+      }
+      if (factor.includes('No retention policy')) {
+        guidance.push('Apply an appropriate data retention policy.');
+      }
+      if (factor.includes('Stale data')) {
+        guidance.push('Review stale data for archival or deletion.');
+      }
+    }
+    return guidance.length > 0
+      ? guidance.join(' ')
+      : 'Review asset security posture and apply appropriate controls.';
   }
 }

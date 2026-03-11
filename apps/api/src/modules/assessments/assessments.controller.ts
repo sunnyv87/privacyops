@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -11,6 +12,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AssessmentsService } from './assessments.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import {
+  CreateAssessmentDto,
+  UpdateAssessmentDto,
+} from './dto/assessment.dto';
 
 @ApiTags('Assessments')
 @ApiBearerAuth()
@@ -24,7 +29,7 @@ export class AssessmentsController {
   async create(
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: any,
+    @Body() dto: CreateAssessmentDto,
   ) {
     const assessment = await this.assessmentsService.create(
       tenantId,
@@ -39,12 +44,16 @@ export class AssessmentsController {
   @ApiOperation({ summary: 'List privacy impact assessments' })
   async findAll(
     @CurrentUser('tenantId') tenantId: string,
+    @Query('type') type?: string,
     @Query('status') status?: string,
+    @Query('owner_id') ownerId?: string,
     @Query('page') page?: number,
     @Query('page_size') pageSize?: number,
   ) {
     return this.assessmentsService.findAll(tenantId, {
+      type,
       status,
+      ownerId,
       page,
       pageSize,
     });
@@ -68,13 +77,29 @@ export class AssessmentsController {
     @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
     @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: UpdateAssessmentDto,
   ) {
     const assessment = await this.assessmentsService.update(
       tenantId,
       id,
       userId,
       dto,
+    );
+    return { data: assessment };
+  }
+
+  @Delete(':id')
+  @RequirePermissions('assessments:assessments:delete')
+  @ApiOperation({ summary: 'Archive an assessment' })
+  async remove(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    const assessment = await this.assessmentsService.delete(
+      tenantId,
+      id,
+      userId,
     );
     return { data: assessment };
   }

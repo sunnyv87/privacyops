@@ -19,6 +19,7 @@ import { SecurityEventsModule } from './core/security/security-events.module';
 import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
 import { TenantGuard } from './core/tenant/guards/tenant.guard';
 import { PermissionsGuard } from './core/auth/guards/permissions.guard';
+import { CsrfGuard } from './core/security/csrf.guard';
 
 // Interceptors
 import { FieldMaskInterceptor } from './core/auth/interceptors/field-mask.interceptor';
@@ -116,6 +117,7 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
   ],
   providers: [
     // Global guards (applied in order)
+    { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },

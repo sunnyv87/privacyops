@@ -1,13 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { WorkflowService } from './workflow.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { NotificationsService } from '@/core/notifications/notifications.service';
+import Redis from 'ioredis';
 
 /**
  * Scheduled jobs for recurring platform operations.
  * Uses @nestjs/schedule cron decorators to run within the API process.
+ *
+ * Each job acquires a Redis distributed lock before executing to prevent
+ * duplicate execution across multiple API replicas.
  */
 @Injectable()
 export class ScheduledJobsService {
@@ -18,7 +22,21 @@ export class ScheduledJobsService {
     private readonly workflows: WorkflowService,
     private readonly events: EventBusService,
     private readonly notifications: NotificationsService,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
+
+  /**
+   * Attempts to acquire a distributed lock via Redis SET NX EX.
+   * Returns true if the lock was acquired, false if another replica holds it.
+   */
+  private async acquireLock(
+    jobName: string,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    const lockKey = `scheduled_lock:${jobName}`;
+    const result = await this.redis.set(lockKey, process.pid.toString(), 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
 
   // ---------------------------------------------------------------------------
   // Retention policy enforcement — Daily at 1:00 AM
@@ -26,6 +44,11 @@ export class ScheduledJobsService {
 
   @Cron('0 1 * * *', { name: 'retention-enforcement' })
   async enforceRetentionPolicies() {
+    if (!(await this.acquireLock('retention-enforcement', 3600))) {
+      this.logger.debug('Retention enforcement skipped — another replica holds the lock');
+      return;
+    }
+
     this.logger.log('Starting scheduled retention policy enforcement');
 
     const tenants = await this.prisma.tenant.findMany({
@@ -87,6 +110,11 @@ export class ScheduledJobsService {
 
   @Cron('0 3 * * *', { name: 'stale-data-review' })
   async reviewStaleData() {
+    if (!(await this.acquireLock('stale-data-review', 3600))) {
+      this.logger.debug('Stale data review skipped — another replica holds the lock');
+      return;
+    }
+
     this.logger.log('Starting scheduled stale data review');
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -135,6 +163,11 @@ export class ScheduledJobsService {
 
   @Cron('0 9 * * *', { name: 'vendor-reassessment-reminders' })
   async sendVendorReassessmentReminders() {
+    if (!(await this.acquireLock('vendor-reassessment-reminders', 3600))) {
+      this.logger.debug('Vendor reminders skipped — another replica holds the lock');
+      return;
+    }
+
     this.logger.log('Starting scheduled vendor reassessment reminders');
 
     const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -183,6 +216,11 @@ export class ScheduledJobsService {
 
   @Cron('*/15 * * * *', { name: 'breach-sla-monitoring' })
   async monitorBreachSlas() {
+    if (!(await this.acquireLock('breach-sla-monitoring', 840))) {
+      this.logger.debug('Breach SLA monitoring skipped — another replica holds the lock');
+      return;
+    }
+
     const openBreaches = await this.prisma.incident.findMany({
       where: {
         isPersonalDataBreach: true,
@@ -238,6 +276,11 @@ export class ScheduledJobsService {
 
   @Cron('0 2 * * 0', { name: 'periodic-access-review' })
   async performAccessReview() {
+    if (!(await this.acquireLock('periodic-access-review', 7200))) {
+      this.logger.debug('Access review skipped — another replica holds the lock');
+      return;
+    }
+
     this.logger.log('Starting scheduled periodic access review');
 
     const tenants = await this.prisma.tenant.findMany({

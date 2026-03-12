@@ -164,6 +164,8 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit(10, 60)
   @ApiOperation({ summary: 'Refresh access token with rotation' })
   async refreshToken(
     @Body() body: { refreshToken: string },
@@ -261,6 +263,7 @@ export class AuthController {
   async mfaEnable(
     @Body() body: { code: string },
     @CurrentUser() user: any,
+    @Req() req: Request,
   ) {
     const dbUser = await this.prisma.user.findUnique({
       where: { id: user.id },
@@ -292,9 +295,26 @@ export class AuthController {
       },
     });
 
+    // Regenerate session after privilege elevation to prevent session fixation
+    if (user.sid) {
+      await this.sessionService.revokeSession(user.sid);
+    }
+    const payload = this.authService.buildPayloadFromUser(dbUser);
+    const newSessionId = await this.sessionService.createSession(
+      user.id,
+      user.tenantId,
+      {
+        ip: req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
+        userAgent: req.headers['user-agent'] || 'unknown',
+        provider: 'local',
+      },
+    );
+    const tokens = this.authService.generateTokens(payload, newSessionId);
+
     return {
       message: 'MFA enabled successfully',
       recoveryCodes,
+      ...tokens,
     };
   }
 

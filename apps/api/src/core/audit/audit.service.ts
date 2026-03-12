@@ -89,6 +89,37 @@ const SECURITY_EVENT_SEVERITY: Record<SecurityEventType, AuditSeverity> = {
   tenant_config_changed: 'warning',
 };
 
+/**
+ * Field name patterns that must be redacted from audit log `changes` objects
+ * to prevent sensitive data leakage into persistent storage.
+ */
+const SENSITIVE_FIELD_PATTERNS = [
+  /password/i,
+  /secret/i,
+  /token/i,
+  /apiKey/i,
+  /api_key/i,
+  /credential/i,
+  /ssn/i,
+  /social_security/i,
+  /credit_card/i,
+  /creditCard/i,
+  /cvv/i,
+  /pin/i,
+  /private_key/i,
+  /privateKey/i,
+  /mfaSecret/i,
+  /mfa_secret/i,
+  /mfaRecoveryCodes/i,
+  /recovery_codes/i,
+  /refreshToken/i,
+  /refresh_token/i,
+  /accessToken/i,
+  /access_token/i,
+];
+
+const REDACTED = '[REDACTED]';
+
 @Injectable()
 export class AuditService implements OnModuleInit {
   private readonly logger = new Logger(AuditService.name);
@@ -143,6 +174,28 @@ export class AuditService implements OnModuleInit {
   }
 
   /**
+   * Recursively redacts sensitive fields from an object to prevent
+   * credentials, tokens, and PII from being persisted in audit logs.
+   */
+  private redactSensitiveFields(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map((item) => this.redactSensitiveFields(item));
+
+    const redacted: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (SENSITIVE_FIELD_PATTERNS.some((pattern) => pattern.test(key))) {
+        redacted[key] = REDACTED;
+      } else if (typeof value === 'object' && value !== null) {
+        redacted[key] = this.redactSensitiveFields(value);
+      } else {
+        redacted[key] = value;
+      }
+    }
+    return redacted;
+  }
+
+  /**
    * Computes an integrity hash for an audit log entry, chained to the previous hash.
    */
   private computeHash(
@@ -181,6 +234,11 @@ export class AuditService implements OnModuleInit {
 
     this.lastHashByTenant.set(entry.tenantId, integrityHash);
 
+    // Redact sensitive fields from changes before persisting
+    const sanitizedChanges = entry.changes
+      ? this.redactSensitiveFields(entry.changes)
+      : undefined;
+
     // Write audit log and update chain state atomically
     await this.prisma.$transaction([
       this.prisma.auditLog.create({
@@ -191,7 +249,7 @@ export class AuditService implements OnModuleInit {
           action: entry.action,
           entityType: entry.entityType,
           entityId: entry.entityId,
-          changes: entry.changes || undefined,
+          changes: sanitizedChanges,
           ipAddress: entry.ipAddress,
           userAgent: entry.userAgent,
           severity: entry.severity || 'info',

@@ -27,9 +27,17 @@ export class MlClassifierClient {
     }
 
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      const apiKey = process.env.ML_CLASSIFIER_API_KEY;
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
       const response = await fetch(`${this.baseUrl}/v1/classify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ samples, modelId }),
         signal: AbortSignal.timeout(10000),
       });

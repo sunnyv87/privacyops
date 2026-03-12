@@ -62,14 +62,21 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
       });
 
       if (!user) {
-        // Auto-provision: create user in the default tenant or first matching tenant
-        // In production, tenant resolution would use domain matching or a signup flow.
+        // Resolve tenant by email domain — never auto-assign to first tenant
+        const emailDomain = email.split('@')[1]?.toLowerCase();
+        if (!emailDomain) {
+          return done(new Error('Invalid email address from OIDC provider'));
+        }
+
         const tenant = await this.prisma.tenant.findFirst({
-          where: { status: 'active' },
+          where: { domain: emailDomain, status: 'active' },
         });
 
         if (!tenant) {
-          return done(new Error('No active tenant found for OIDC user provisioning'));
+          this.logger.warn(
+            `OIDC auto-provisioning denied: no active tenant with domain "${emailDomain}" for user ${email}`,
+          );
+          return done(new Error(`No tenant configured for domain "${emailDomain}". Contact your administrator.`));
         }
 
         user = await this.prisma.user.create({
@@ -90,7 +97,14 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
 
         this.logger.log(`Provisioned new OIDC user: ${email} (${user.id})`);
       } else if (!user.externalId) {
-        // Link existing local user to OIDC
+        // Do NOT auto-link existing accounts by email — requires admin action
+        // to prevent account takeover via OIDC provider email impersonation
+        this.logger.warn(
+          `OIDC login denied: user ${email} exists but is not linked to OIDC. Admin must link the account manually.`,
+        );
+        return done(new Error('Account exists but is not linked to OIDC. Contact your administrator to link your account.'));
+      } else if (false) {
+        // Kept for reference — manual linking should use a dedicated admin endpoint
         user = await this.prisma.user.update({
           where: { id: user.id },
           data: {

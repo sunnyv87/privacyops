@@ -22,6 +22,7 @@ import { SessionService } from './services/session.service';
 import { MfaService } from './services/mfa.service';
 import { RateLimit, RateLimitGuard } from './guards/rate-limit.guard';
 import { PrismaService } from '@/core/prisma/prisma.service';
+import { CryptoService } from '@/core/crypto/crypto.service';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -33,6 +34,7 @@ export class AuthController {
     private readonly sessionService: SessionService,
     private readonly mfaService: MfaService,
     private readonly prisma: PrismaService,
+    private readonly cryptoService: CryptoService,
   ) {}
 
   @Public()
@@ -112,22 +114,33 @@ export class AuthController {
       throw new BadRequestException('MFA is not configured for this user');
     }
 
+    // Decrypt the MFA secret for TOTP verification
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
+    const decryptedSecret = await this.cryptoService.decrypt(user.mfaSecret, tenant.encryptionKeyId);
+
     // Try TOTP code first
-    let isValid = this.mfaService.verifyToken(user.mfaSecret, body.code);
+    let isValid = this.mfaService.verifyToken(decryptedSecret, body.code);
 
     // If TOTP fails, try recovery code
     if (!isValid && user.mfaRecoveryCodes) {
-      const recoveryCodes = user.mfaRecoveryCodes as string[];
+      // Recovery codes are stored as encrypted JSON
+      const recoveryCodes: string[] = typeof user.mfaRecoveryCodes === 'string'
+        ? await this.cryptoService.decryptJson(user.mfaRecoveryCodes, tenant.encryptionKeyId)
+        : user.mfaRecoveryCodes as string[];
       const result = this.mfaService.verifyRecoveryCode(
         recoveryCodes,
         body.code,
       );
       if (result.valid) {
         isValid = true;
-        // Update remaining recovery codes
+        // Re-encrypt and update remaining recovery codes
+        const encryptedRemaining = await this.cryptoService.encryptJson(
+          result.remaining,
+          tenant.encryptionKeyId,
+        );
         await this.prisma.user.update({
           where: { id: user.id },
-          data: { mfaRecoveryCodes: result.remaining },
+          data: { mfaRecoveryCodes: encryptedRemaining as any },
         });
       }
     }
@@ -247,10 +260,15 @@ export class AuthController {
     const { secret, otpauthUrl, qrCodeDataUrl } =
       await this.mfaService.generateSecret(user.email);
 
-    // Store the secret temporarily (not yet enabled)
+    // Encrypt the secret before storing
+    const encryptedSecret = await this.cryptoService.encrypt(
+      secret,
+      (await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } })).encryptionKeyId,
+    );
+
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { mfaSecret: secret },
+      data: { mfaSecret: encryptedSecret },
     });
 
     return { otpauthUrl, qrCodeDataUrl };
@@ -279,19 +297,27 @@ export class AuthController {
       throw new BadRequestException('MFA is already enabled');
     }
 
-    const isValid = this.mfaService.verifyToken(dbUser.mfaSecret, body.code);
+    // Decrypt the stored MFA secret for verification
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
+    const decryptedSecret = await this.cryptoService.decrypt(dbUser.mfaSecret, tenant.encryptionKeyId);
+
+    const isValid = this.mfaService.verifyToken(decryptedSecret, body.code);
     if (!isValid) {
       throw new UnauthorizedException('Invalid TOTP code');
     }
 
-    // Generate recovery codes
+    // Generate recovery codes and encrypt them before storing
     const recoveryCodes = this.mfaService.generateRecoveryCodes();
+    const encryptedRecoveryCodes = await this.cryptoService.encryptJson(
+      recoveryCodes,
+      tenant.encryptionKeyId,
+    );
 
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
         mfaEnabled: true,
-        mfaRecoveryCodes: recoveryCodes,
+        mfaRecoveryCodes: encryptedRecoveryCodes as any,
       },
     });
 
@@ -334,7 +360,9 @@ export class AuthController {
       throw new BadRequestException('MFA is not enabled');
     }
 
-    const isValid = this.mfaService.verifyToken(dbUser.mfaSecret, body.code);
+    const tenantForMfa = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
+    const decryptedMfaSecret = await this.cryptoService.decrypt(dbUser.mfaSecret, tenantForMfa.encryptionKeyId);
+    const isValid = this.mfaService.verifyToken(decryptedMfaSecret, body.code);
     if (!isValid) {
       throw new UnauthorizedException('Invalid TOTP code');
     }

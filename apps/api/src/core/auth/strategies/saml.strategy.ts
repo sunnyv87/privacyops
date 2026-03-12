@@ -25,7 +25,7 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
         '/api/v1/auth/saml/callback',
       ),
       wantAssertionsSigned: true,
-      wantAuthnResponseSigned: false,
+      wantAuthnResponseSigned: true,
     });
   }
 
@@ -64,13 +64,21 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
       });
 
       if (!user) {
-        // Auto-provision user
+        // Resolve tenant by email domain — never auto-assign to first tenant
+        const emailDomain = email.split('@')[1]?.toLowerCase();
+        if (!emailDomain) {
+          return done(new Error('Invalid email address from SAML assertion'));
+        }
+
         const tenant = await this.prisma.tenant.findFirst({
-          where: { status: 'active' },
+          where: { domain: emailDomain, status: 'active' },
         });
 
         if (!tenant) {
-          return done(new Error('No active tenant found for SAML user provisioning'));
+          this.logger.warn(
+            `SAML auto-provisioning denied: no active tenant with domain "${emailDomain}" for user ${email}`,
+          );
+          return done(new Error(`No tenant configured for domain "${emailDomain}". Contact your administrator.`));
         }
 
         user = await this.prisma.user.create({
@@ -91,19 +99,11 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
 
         this.logger.log(`Provisioned new SAML user: ${email} (${user.id})`);
       } else if (!user.externalId) {
-        // Link existing user to SAML identity
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            externalId: nameID,
-            authProvider: 'saml',
-          },
-          include: {
-            userRoles: {
-              include: { role: true },
-            },
-          },
-        });
+        // Do NOT auto-link existing accounts by email — requires admin action
+        this.logger.warn(
+          `SAML login denied: user ${email} exists but is not linked to SAML. Admin must link the account manually.`,
+        );
+        return done(new Error('Account exists but is not linked to SAML. Contact your administrator to link your account.'));
       }
 
       const roles = user.userRoles.map((ur: any) => ur.role.slug);

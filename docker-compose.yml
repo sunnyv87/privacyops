@@ -32,7 +32,9 @@ services:
       - '9200:9200'
     environment:
       - discovery.type=single-node
-      - DISABLE_SECURITY_PLUGIN=true
+      # WARNING: Security plugin is disabled for LOCAL DEVELOPMENT ONLY.
+      # Production OpenSearch clusters MUST have the security plugin enabled.
+      - DISABLE_SECURITY_PLUGIN=${OPENSEARCH_DISABLE_SECURITY:-true}
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
     volumes:
       - opensearch_data:/usr/share/opensearch/data
@@ -70,8 +72,9 @@ services:
     ports:
       - '8080:8080'
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      # WARNING: Change these credentials immediately. Never use defaults in production.
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD in .env}
     command: start-dev
 
   minio:

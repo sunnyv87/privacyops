@@ -77,12 +77,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
         api.setToken(response.accessToken);
         api.setRefreshToken(response.refreshToken);
 
-        localStorage.setItem('accessToken', response.accessToken);
-        localStorage.setItem('refreshToken', response.refreshToken);
-        localStorage.setItem('user', JSON.stringify(response.user));
+        sessionStorage.setItem('accessToken', response.accessToken);
+        sessionStorage.setItem('refreshToken', response.refreshToken);
+        sessionStorage.setItem('user', JSON.stringify(response.user));
 
-        // Set cookie for middleware
-        document.cookie = `token=${response.accessToken}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+        // Set cookie for middleware (Secure in production, SameSite=Strict)
+        const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `privacyops_token=${response.accessToken}; path=/; max-age=${60 * 15}; SameSite=Strict${secure}`;
 
         set({
           accessToken: response.accessToken,
@@ -124,11 +125,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
       api.setToken(response.accessToken);
       api.setRefreshToken(response.refreshToken);
 
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
-      localStorage.setItem('user', JSON.stringify(response.user));
+      sessionStorage.setItem('accessToken', response.accessToken);
+      sessionStorage.setItem('refreshToken', response.refreshToken);
+      sessionStorage.setItem('user', JSON.stringify(response.user));
 
-      document.cookie = `token=${response.accessToken}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+      const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = `privacyops_token=${response.accessToken}; path=/; max-age=${60 * 15}; SameSite=Strict${secure}`;
 
       set({
         accessToken: response.accessToken,
@@ -152,10 +154,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
       api.setToken(null);
       api.setRefreshToken(null);
 
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
-      document.cookie = 'token=; path=/; max-age=0';
+      sessionStorage.removeItem('accessToken');
+      sessionStorage.removeItem('refreshToken');
+      sessionStorage.removeItem('user');
+      document.cookie = 'privacyops_token=; path=/; max-age=0';
 
       set({
         accessToken: null,
@@ -170,7 +172,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
 
     refreshAuth: async (): Promise<boolean> => {
-      const currentRefreshToken = get().refreshToken || localStorage.getItem('refreshToken');
+      const currentRefreshToken = get().refreshToken || sessionStorage.getItem('refreshToken');
       if (!currentRefreshToken) {
         return false;
       }
@@ -195,10 +197,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
         api.setToken(data.accessToken);
         api.setRefreshToken(data.refreshToken);
 
-        localStorage.setItem('accessToken', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
+        sessionStorage.setItem('accessToken', data.accessToken);
+        sessionStorage.setItem('refreshToken', data.refreshToken);
 
-        document.cookie = `token=${data.accessToken}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+        const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `privacyops_token=${data.accessToken}; path=/; max-age=${60 * 15}; SameSite=Strict${secure}`;
 
         set({
           accessToken: data.accessToken,
@@ -208,7 +211,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         // If user data is included in the refresh response, update it
         if (data.user) {
           const permissions = extractPermissions(data.user);
-          localStorage.setItem('user', JSON.stringify(data.user));
+          sessionStorage.setItem('user', JSON.stringify(data.user));
           set({ user: data.user, permissions });
         }
 
@@ -217,10 +220,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
         // Refresh failed — clear auth state
         api.setToken(null);
         api.setRefreshToken(null);
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
-        document.cookie = 'token=; path=/; max-age=0';
+        sessionStorage.removeItem('accessToken');
+        sessionStorage.removeItem('refreshToken');
+        sessionStorage.removeItem('user');
+        document.cookie = 'privacyops_token=; path=/; max-age=0';
 
         set({
           accessToken: null,
@@ -257,9 +260,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
         return;
       }
 
-      const storedToken = localStorage.getItem('accessToken');
-      const storedRefreshToken = localStorage.getItem('refreshToken');
-      const storedUser = localStorage.getItem('user');
+      const storedToken = sessionStorage.getItem('accessToken');
+      const storedRefreshToken = sessionStorage.getItem('refreshToken');
+      const storedUser = sessionStorage.getItem('user');
 
       if (!storedToken || !storedUser) {
         set({ isLoading: false });
@@ -288,7 +291,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           const freshUser = response.data;
           const freshPermissions = extractPermissions(freshUser);
 
-          localStorage.setItem('user', JSON.stringify(freshUser));
+          sessionStorage.setItem('user', JSON.stringify(freshUser));
           set({
             user: freshUser,
             permissions: freshPermissions,
@@ -308,10 +311,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
           }
         }
       } catch {
-        // Corrupted data in localStorage
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
+        // Corrupted data in sessionStorage
+        sessionStorage.removeItem('accessToken');
+        sessionStorage.removeItem('refreshToken');
+        sessionStorage.removeItem('user');
         set({ isLoading: false });
       }
     },

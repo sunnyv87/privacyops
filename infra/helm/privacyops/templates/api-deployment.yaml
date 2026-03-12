@@ -47,6 +47,13 @@ spec:
               value: {{ .Values.nats.url | quote }}
             - name: TEMPORAL_ADDRESS
               value: {{ .Values.temporal.address | quote }}
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
           readinessProbe:

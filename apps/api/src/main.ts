@@ -64,24 +64,26 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: { enableImplicitConversion: true },
+      transformOptions: { enableImplicitConversion: false },
     }),
   );
 
   // API prefix
   app.setGlobalPrefix('api/v1');
 
-  // Swagger
-  const config = new DocumentBuilder()
-    .setTitle('TechD PrivacyOps API')
-    .setDescription('Enterprise Privacy, DSPM & Data Governance Platform')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addApiKey({ type: 'apiKey', name: 'X-API-Key', in: 'header' }, 'api-key')
-    .build();
+  // Swagger — only enabled in non-production environments
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('TechD PrivacyOps API')
+      .setDescription('Enterprise Privacy, DSPM & Data Governance Platform')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addApiKey({ type: 'apiKey', name: 'X-API-Key', in: 'header' }, 'api-key')
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.PORT || 4000;
   await app.listen(port);

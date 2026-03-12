@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
 interface EmailPayload {
@@ -13,15 +14,16 @@ export class EmailChannel {
   private readonly logger = new Logger(EmailChannel.name);
   private transporter: nodemailer.Transporter | null = null;
 
-  constructor() {
-    const host = process.env.SMTP_HOST;
+  constructor(private readonly config: ConfigService) {
+    const host = this.config.get<string>('SMTP_HOST');
     if (host) {
       this.transporter = nodemailer.createTransport({
         host,
-        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        port: parseInt(this.config.get<string>('SMTP_PORT', '587'), 10),
+        secure: parseInt(this.config.get<string>('SMTP_PORT', '587'), 10) === 465,
         auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
+          user: this.config.get<string>('SMTP_USER'),
+          pass: this.config.get<string>('SMTP_PASS'),
         },
       });
     }
@@ -34,7 +36,7 @@ export class EmailChannel {
     }
 
     await this.transporter.sendMail({
-      from: process.env.SMTP_FROM || 'noreply@privacyops.techd.com',
+      from: this.config.get<string>('SMTP_FROM', 'noreply@privacyops.techd.com'),
       to: payload.to,
       subject: payload.subject,
       text: payload.body,

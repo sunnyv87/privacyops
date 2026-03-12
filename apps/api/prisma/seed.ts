@@ -1,9 +1,17 @@
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
+  // Guard: seed should only run in development/test environments
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Seed script must not run in production. Use a proper migration or admin provisioning workflow.',
+    );
+  }
+
   console.log('Seeding database...');
 
   // ============================================================================
@@ -303,12 +311,17 @@ async function main() {
     },
   });
 
+  // Generate a random password for the demo admin and hash it
+  const demoPassword = process.env.SEED_ADMIN_PASSWORD || randomBytes(16).toString('hex');
+  const passwordHash = await bcrypt.hash(demoPassword, 12);
+
   await prisma.user.create({
     data: {
       id: adminUserId,
       tenantId,
       email: 'admin@techd.com',
       name: 'Demo Admin',
+      passwordHash,
       status: 'active',
       authProvider: 'local',
       mfaEnabled: false,
@@ -333,6 +346,10 @@ async function main() {
   console.log(`  Tenant ID: ${tenantId}`);
   console.log(`  Admin User ID: ${adminUserId}`);
   console.log(`  Email: admin@techd.com`);
+  if (!process.env.SEED_ADMIN_PASSWORD) {
+    console.log(`  Generated password: ${demoPassword}`);
+    console.log('  WARNING: Save this password — it will not be shown again.');
+  }
 
   console.log('\nSeed completed successfully!');
 }

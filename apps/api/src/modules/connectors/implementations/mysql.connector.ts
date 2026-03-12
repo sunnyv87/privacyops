@@ -25,7 +25,7 @@ export class MysqlConnector extends BaseConnector {
       database,
       user: username,
       password,
-      ssl: ssl ? { rejectUnauthorized: false } : undefined,
+      ssl: ssl ? { rejectUnauthorized: true } : undefined,
       waitForConnections: true,
       connectionLimit: 5,
     });

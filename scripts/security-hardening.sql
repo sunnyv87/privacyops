@@ -115,10 +115,15 @@ CREATE TRIGGER audit_log_immutable_delete
 -- In production, the application should connect as 'privacyops_app' not 'privacyops'
 -- ============================================================================
 
+-- The privacyops_app role MUST be created manually with a strong password:
+--   CREATE ROLE privacyops_app LOGIN PASSWORD '<generate-strong-password>';
+-- Or via psql variable:
+--   psql -v app_password="$(openssl rand -base64 32)" \
+--     -c "CREATE ROLE privacyops_app LOGIN PASSWORD :'app_password'"
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'privacyops_app') THEN
-    CREATE ROLE privacyops_app LOGIN PASSWORD 'change-in-production';
+    RAISE EXCEPTION 'Role privacyops_app must be created with a strong password before running this script. See comments above.';
   END IF;
 END $$;
 

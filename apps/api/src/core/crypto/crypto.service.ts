@@ -107,7 +107,7 @@ export class CryptoService {
    * WARNING: Deterministic encryption leaks equality — two identical plaintexts
    * produce identical ciphertexts. Only use for searchable index values.
    */
-  encryptDeterministic(plaintext: string, key: Buffer): string {
+  encryptDeterministic(plaintext: string, key: Buffer, keyId?: string): string {
     // Derive a deterministic IV from HMAC(key, plaintext)
     // This provides SIV-like semantics: same input always produces same output
     const ivFull = crypto
@@ -129,11 +129,58 @@ export class CryptoService {
     ]);
     const authTag = cipher.getAuthTag();
 
-    return [
+    const parts = [
       iv.toString('base64'),
       authTag.toString('base64'),
       encrypted.toString('base64'),
-    ].join(':');
+    ];
+
+    // Prefix with key ID to support key rotation
+    if (keyId) {
+      parts.unshift(keyId);
+    }
+
+    return parts.join(':');
+  }
+
+  /**
+   * Decrypt a deterministic ciphertext. Supports both legacy (3-part) and
+   * key-rotated (4-part with keyId prefix) formats.
+   */
+  decryptDeterministic(
+    ciphertext: string,
+    keyResolver: (keyId?: string) => Buffer,
+  ): string {
+    const parts = ciphertext.split(':');
+    let ivB64: string, authTagB64: string, encryptedB64: string;
+    let keyId: string | undefined;
+
+    if (parts.length === 4) {
+      [keyId, ivB64, authTagB64, encryptedB64] = parts;
+    } else if (parts.length === 3) {
+      [ivB64, authTagB64, encryptedB64] = parts;
+    } else {
+      throw new Error('Invalid deterministic ciphertext format');
+    }
+
+    const key = keyResolver(keyId);
+    const iv = Buffer.from(ivB64, 'base64');
+    const authTag = Buffer.from(authTagB64, 'base64');
+    const encrypted = Buffer.from(encryptedB64, 'base64');
+
+    const encKey = crypto
+      .createHmac('sha256', key)
+      .update('deterministic-enc-key')
+      .digest();
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]);
+
+    return decrypted.toString('utf8');
   }
 
   /**

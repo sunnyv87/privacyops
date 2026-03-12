@@ -15,9 +15,52 @@ import {
   Header,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsObject,
+  ValidateNested,
+  IsBoolean,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ScimService } from './scim.service';
 import { ScimAuthGuard } from './scim-auth.guard';
 import { Public } from '@/core/auth/decorators/public.decorator';
+
+// ── SCIM DTOs ──────────────────────────────────────────────────────────────
+class ScimName {
+  @IsOptional() @IsString() givenName?: string;
+  @IsOptional() @IsString() familyName?: string;
+  @IsOptional() @IsString() formatted?: string;
+}
+
+class ScimEmail {
+  @IsString() value: string;
+  @IsOptional() @IsString() type?: string;
+  @IsOptional() @IsBoolean() primary?: boolean;
+}
+
+class ScimUserDto {
+  @IsOptional() @IsString() userName?: string;
+  @IsOptional() @ValidateNested() @Type(() => ScimName) name?: ScimName;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ScimEmail) emails?: ScimEmail[];
+  @IsOptional() @IsString() displayName?: string;
+  @IsOptional() @IsString() externalId?: string;
+  @IsOptional() @IsBoolean() active?: boolean;
+  @IsOptional() @IsArray() schemas?: string[];
+}
+
+class ScimPatchOperation {
+  @IsString() op: string;
+  @IsOptional() @IsString() path?: string;
+  @IsOptional() value?: any;
+}
+
+class ScimPatchDto {
+  @IsOptional() @IsArray() schemas?: string[];
+  @IsArray() @ValidateNested({ each: true }) @Type(() => ScimPatchOperation) Operations: ScimPatchOperation[];
+}
 
 /**
  * SCIM 2.0 API Controller
@@ -65,7 +108,7 @@ export class ScimController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create user (SCIM)' })
   @Header('Content-Type', 'application/scim+json')
-  async createUser(@Req() req: any, @Body() body: any) {
+  async createUser(@Req() req: any, @Body() body: ScimUserDto) {
     return this.scimService.createUser(req.tenantId, body);
   }
 
@@ -75,7 +118,7 @@ export class ScimController {
   async replaceUser(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: ScimUserDto,
   ) {
     return this.scimService.replaceUser(req.tenantId, id, body);
   }
@@ -86,7 +129,7 @@ export class ScimController {
   async patchUser(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: ScimPatchDto,
   ) {
     return this.scimService.patchUser(req.tenantId, id, body);
   }
@@ -131,7 +174,7 @@ export class ScimController {
   async patchGroup(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: ScimPatchDto,
   ) {
     return this.scimService.patchGroup(req.tenantId, id, body);
   }

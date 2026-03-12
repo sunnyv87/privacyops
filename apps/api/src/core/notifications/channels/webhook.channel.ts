@@ -21,8 +21,16 @@ export class WebhookChannel {
       data: payload.data,
     });
 
+    const signingSecret = process.env.WEBHOOK_SIGNING_SECRET;
+    if (!signingSecret) {
+      this.logger.error(
+        'WEBHOOK_SIGNING_SECRET is not configured — skipping webhook dispatch',
+      );
+      return;
+    }
+
     const signature = crypto
-      .createHmac('sha256', process.env.WEBHOOK_SIGNING_SECRET || 'default-secret')
+      .createHmac('sha256', signingSecret)
       .update(body)
       .digest('hex');
 

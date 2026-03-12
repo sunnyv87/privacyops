@@ -1,46 +1,40 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Inject, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-interface TenantRateLimit {
-  count: number;
-  windowStart: number;
-}
+import Redis from 'ioredis';
 
 @Injectable()
 export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RateLimiterService.name);
-  private readonly limits = new Map<string, TenantRateLimit>();
-  private cleanupInterval: ReturnType<typeof setInterval>;
 
   private readonly defaultWindowMs: number;
   private readonly defaultMaxRequests: number;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+  ) {
     this.defaultWindowMs = Number(config.get('RATE_LIMIT_WINDOW_MS', '60000'));
     this.defaultMaxRequests = Number(config.get('RATE_LIMIT_MAX_REQUESTS', '100'));
   }
 
   onModuleInit() {
-    // Clean up stale entries every 5 minutes
-    this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    this.logger.log('Redis-backed rate limiter initialized');
   }
 
   onModuleDestroy() {
-    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    // Redis client lifecycle managed by the provider factory
   }
 
-  isAllowed(tenantId: string, endpoint?: string): boolean {
-    const key = endpoint ? `${tenantId}:${endpoint}` : tenantId;
-    const now = Date.now();
-    const existing = this.limits.get(key);
+  async isAllowed(tenantId: string, endpoint?: string): Promise<boolean> {
+    const key = `tenant_rate:${endpoint ? `${tenantId}:${endpoint}` : tenantId}`;
+    const windowSeconds = Math.ceil(this.defaultWindowMs / 1000);
 
-    if (!existing || now - existing.windowStart > this.defaultWindowMs) {
-      this.limits.set(key, { count: 1, windowStart: now });
-      return true;
+    const current = await this.redis.incr(key);
+    if (current === 1) {
+      await this.redis.expire(key, windowSeconds);
     }
 
-    existing.count++;
-    if (existing.count > this.defaultMaxRequests) {
+    if (current > this.defaultMaxRequests) {
       this.logger.warn(`Rate limit exceeded for tenant ${tenantId} on ${endpoint || 'global'}`);
       return false;
     }
@@ -48,21 +42,12 @@ export class RateLimiterService implements OnModuleInit, OnModuleDestroy {
     return true;
   }
 
-  getRemainingRequests(tenantId: string, endpoint?: string): number {
-    const key = endpoint ? `${tenantId}:${endpoint}` : tenantId;
-    const existing = this.limits.get(key);
-    if (!existing || Date.now() - existing.windowStart > this.defaultWindowMs) {
+  async getRemainingRequests(tenantId: string, endpoint?: string): Promise<number> {
+    const key = `tenant_rate:${endpoint ? `${tenantId}:${endpoint}` : tenantId}`;
+    const current = await this.redis.get(key);
+    if (!current) {
       return this.defaultMaxRequests;
     }
-    return Math.max(0, this.defaultMaxRequests - existing.count);
-  }
-
-  private cleanup() {
-    const now = Date.now();
-    for (const [key, value] of this.limits.entries()) {
-      if (now - value.windowStart > this.defaultWindowMs * 2) {
-        this.limits.delete(key);
-      }
-    }
+    return Math.max(0, this.defaultMaxRequests - parseInt(current, 10));
   }
 }

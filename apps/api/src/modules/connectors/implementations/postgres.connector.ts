@@ -25,7 +25,7 @@ export class PostgresConnector implements IConnector {
       database,
       user: username,
       password,
-      ssl: ssl ? { rejectUnauthorized: false } : false,
+      ssl: ssl ? { rejectUnauthorized: true } : false,
     });
 
     await this.client.connect();

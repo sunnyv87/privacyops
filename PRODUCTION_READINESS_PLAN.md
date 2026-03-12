@@ -11,12 +11,12 @@
 | Dimension              | Score  | Status       |
 |------------------------|--------|--------------|
 | Security               | 7/10   | Acceptable   |
-| Connector Scalability  | 3/10   | Critical     |
+| Connector Scalability  | 2/10   | Critical (5/7 are stubs, only 2 registered) |
 | API Performance        | 4/10   | Poor         |
 | Event Architecture     | 2/10   | Critical     |
 | Data Graph             | 6/10   | Fair         |
 | Database Schema        | 7/10   | Acceptable   |
-| **Overall**            | **5.5/10** | **Not Production Ready** |
+| **Overall**            | **5.2/10** | **Not Production Ready** |
 
 ---
 
@@ -53,15 +53,17 @@
 **Current State:** 7 connectors exist: `aws-s3`, `azure-blob`, `gcp-storage`, `postgres`, `mysql`, `mongodb`, `snowflake`. Only Snowflake status is unknown — need to verify.
 
 **Critical Issues in Existing Connectors:**
-| Connector | Extends BaseConnector? | Issues |
-|-----------|----------------------|--------|
-| aws-s3 | NO — implements IConnector directly | No pagination (MaxKeys:1000, no ContinuationToken loop). `sampleContent` is empty stub. No retry/rate-limit. |
-| postgres | NO — implements IConnector directly | Uses `pg.Client` (single connection, not `Pool`). SQL injection via `"${c.name}"` in sampleContent. `rejectUnauthorized: false`. No query timeout. |
-| mysql | NO (likely) | Needs verification |
-| mongodb | NO (likely) | Needs verification |
-| azure-blob | NO (likely) | Needs verification |
-| gcp-storage | NO (likely) | Needs verification |
-| snowflake | NO (likely) | Needs verification |
+| Connector | Extends BaseConnector? | Registered in Module? | Status |
+|-----------|----------------------|----------------------|--------|
+| aws-s3 | NO — implements IConnector directly | YES | Production-ready but no pagination (MaxKeys:1000, no ContinuationToken). `sampleContent` empty stub. No retry/rate-limit. |
+| postgres | NO — implements IConnector directly | YES | Production-ready but uses `pg.Client` (not `Pool`). SQL injection in sampleContent. `rejectUnauthorized: false`. No query timeout. |
+| mysql | YES | **NO** | Heavily stubbed — pool creation commented out, returns empty arrays |
+| mongodb | YES | **NO** | Partially implemented — collection listing works, rest stubbed |
+| azure-blob | YES | **NO** | Heavily stubbed — client creation commented out, TODO comments throughout |
+| gcp-storage | YES | **NO** | Heavily stubbed — returns empty arrays, client commented out |
+| snowflake | YES | **NO** | Heavily stubbed — all operations return placeholders |
+
+**NOTE:** Only 2 of 7 connectors are registered in `ConnectorsModule`. The other 5 are dead code — not injectable at runtime.
 
 **Plan:**
 
@@ -104,23 +106,21 @@
 
 ## STEP 3: CONTROLLER ROUTE COLLISION FIXES
 
-**Current State:** 38 controllers, 3 route collision groups identified:
+**Current State:** 38 controllers, 3 confirmed route collisions:
 
-| Prefix | Controllers | Collision Risk |
-|--------|------------|----------------|
-| `data-graph` | `data-graph.controller.ts`, `graph-analytics.controller.ts` | Needs sub-path verification |
-| `incidents` | `incidents.controller.ts`, `incident-response-ai.controller.ts` | Needs sub-path verification |
-| `ai-governance` | `ai-governance.controller.ts`, `ai-governance-intelligence.controller.ts` | Needs sub-path verification |
+| Collision | Route | Controllers |
+|-----------|-------|-------------|
+| 1 | `POST /data-graph/sync` | `DataGraphController.syncAll()` vs `GraphAnalyticsController.syncEntities()` |
+| 2 | `GET /incidents/:id/impact` | `IncidentsController.getImpact()` vs `IncidentResponseAiController.getImpactAnalysis()` |
+| 3 | `POST /ai-governance/systems/:id/lineage` | `AiGovernanceController` vs `AiGovernanceIntelligenceController` |
 
 **Plan:**
-1. **Audit all routes** in colliding controller pairs for exact HTTP-method + path conflicts
-2. **Namespace sub-controllers** — If collisions exist:
-   - `graph-analytics.controller.ts` → `@Controller('data-graph/analytics')`
-   - `incident-response-ai.controller.ts` → `@Controller('incidents/ai')` (if not already)
-   - `ai-governance-intelligence.controller.ts` → `@Controller('ai-governance/intelligence')` (if not already)
-3. **Verify no overlapping param routes** — e.g., `GET :id` vs `GET analytics` ambiguity
+1. **Fix collision 1** — Move `GraphAnalyticsController` sync route to `POST /data-graph/analytics/sync` or remove duplicate and consolidate into `DataGraphController`
+2. **Fix collision 2** — Move AI impact analysis to `GET /incidents/:id/ai-impact` in `IncidentResponseAiController`, keep original in `IncidentsController`
+3. **Fix collision 3** — Move intelligence lineage to `POST /ai-governance/intelligence/systems/:id/lineage` by changing controller prefix to `@Controller('ai-governance/intelligence')`
+4. **Verify frontend** — Check `apps/web` for any references to changed routes
 
-**Files to modify:** Up to 3 controller files
+**Files to modify:** 3 controller files
 **Estimated complexity:** Low
 **Risk:** Low (URL changes require frontend alignment — check if routes are called from `apps/web`)
 

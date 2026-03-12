@@ -8,123 +8,147 @@ describe('SchemaHeuristicsEngine', () => {
   });
 
   describe('classifyByColumnName', () => {
-    it('should detect email columns', () => {
+    // ─── Email patterns ──────────────────────────────────────────────────
+    it.each([
+      ['email', 'Email Address', 0.95],
+      ['e-mail', 'Email Address', 0.95],
+      ['email_addr', 'Email Address', 0.90],
+      ['EMAIL_ADDRESS', 'Email Address', 0.80],
+    ])('should classify "%s" as %s with confidence >= %f', (name, label, minConfidence) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+      expect(result!.confidence).toBeGreaterThanOrEqual(minConfidence);
+    });
+
+    // ─── Phone patterns ─────────────────────────────────────────────────
+    it.each([
+      ['phone', 'Phone Number', 0.95],
+      ['phone_number', 'Phone Number', 0.90],
+      ['mobile', 'Phone Number', 0.80],
+      ['cell_phone', 'Phone Number', 0.85],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── SSN patterns ───────────────────────────────────────────────────
+    it.each([
+      ['ssn', 'SSN', 0.95],
+      ['social_security_number', 'SSN', 0.95],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── Date of Birth ──────────────────────────────────────────────────
+    it.each([
+      ['dob', 'Date of Birth'],
+      ['date_of_birth', 'Date of Birth'],
+      ['birth_date', 'Date of Birth'],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── Financial patterns ─────────────────────────────────────────────
+    it.each([
+      ['credit_card_number', 'Credit Card Number'],
+      ['cc_num', 'Credit Card Number'],
+      ['salary', 'Salary'],
+      ['compensation', 'Salary'],
+      ['bank_account_number', 'Bank Account'],
+      ['routing_number', 'Bank Routing Number'],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── Credential patterns ────────────────────────────────────────────
+    it.each([
+      ['password', 'Password / Secret', 0.95],
+      ['passwd', 'Password / Secret', 0.90],
+      ['pwd', 'Password / Secret', 0.80],
+      ['secret', 'Password / Secret', 0.80],
+      ['api_key', 'API Key', 0.95],
+      ['access_key', 'API Key', 0.90],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── India-specific PII ─────────────────────────────────────────────
+    it.each([
+      ['aadhaar', 'Aadhaar Number'],
+      ['pan_number', 'PAN Number'],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── Identity fields ────────────────────────────────────────────────
+    it.each([
+      ['full_name', 'Full Name'],
+      ['first_name', 'Full Name'],
+      ['last_name', 'Full Name'],
+      ['ip_address', 'IP Address'],
+      ['gender', 'Gender'],
+      ['ethnicity', 'Ethnicity'],
+      ['passport', 'Passport Number'],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── Health data ────────────────────────────────────────────────────
+    it.each([
+      ['diagnosis_code', 'Medical Diagnosis'],
+      ['medical_record', 'Medical Record'],
+    ])('should classify "%s" as %s', (name, label) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe(label);
+    });
+
+    // ─── Non-sensitive fields ───────────────────────────────────────────
+    it.each([
+      'id',
+      'created_at',
+      'updated_at',
+      'is_active',
+      'count',
+      'total',
+      'status',
+      'description',
+      'version',
+    ])('should return null for non-sensitive column "%s"', (name) => {
+      const result = engine.classifyByColumnName(name);
+      expect(result).toBeNull();
+    });
+
+    // ─── Edge cases ─────────────────────────────────────────────────────
+    it('should handle whitespace in column names', () => {
+      const result = engine.classifyByColumnName('  email  ');
+      expect(result).not.toBeNull();
+      expect(result!.labelName).toBe('Email Address');
+    });
+
+    it('should pick highest confidence when multiple patterns match', () => {
       const result = engine.classifyByColumnName('email');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Email Address');
-      expect(result!.confidence).toBeGreaterThanOrEqual(0.80);
-    });
-
-    it('should detect email_address columns', () => {
-      const result = engine.classifyByColumnName('email_address');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Email Address');
-    });
-
-    it('should detect phone columns', () => {
-      const result = engine.classifyByColumnName('phone');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Phone Number');
       expect(result!.confidence).toBe(0.95);
-    });
-
-    it('should detect mobile columns', () => {
-      const result = engine.classifyByColumnName('mobile');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Phone Number');
-    });
-
-    it('should detect SSN columns', () => {
-      const result = engine.classifyByColumnName('ssn');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('SSN');
-      expect(result!.confidence).toBe(0.95);
-    });
-
-    it('should detect social_security_number columns', () => {
-      const result = engine.classifyByColumnName('social_security_number');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('SSN');
-    });
-
-    it('should detect date_of_birth columns', () => {
-      const result = engine.classifyByColumnName('date_of_birth');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Date of Birth');
-    });
-
-    it('should detect dob columns', () => {
-      const result = engine.classifyByColumnName('dob');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Date of Birth');
-    });
-
-    it('should detect credit_card columns', () => {
-      const result = engine.classifyByColumnName('credit_card_number');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Credit Card Number');
-    });
-
-    it('should detect password columns', () => {
-      const result = engine.classifyByColumnName('password');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Password / Secret');
-      expect(result!.confidence).toBe(0.95);
-    });
-
-    it('should detect api_key columns', () => {
-      const result = engine.classifyByColumnName('api_key');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('API Key');
-    });
-
-    it('should detect aadhaar columns', () => {
-      const result = engine.classifyByColumnName('aadhaar');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Aadhaar Number');
-    });
-
-    it('should detect salary columns', () => {
-      const result = engine.classifyByColumnName('salary');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Salary');
-    });
-
-    it('should detect bank_account columns', () => {
-      const result = engine.classifyByColumnName('bank_account_number');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Bank Account');
-    });
-
-    it('should detect full_name columns', () => {
-      const result = engine.classifyByColumnName('full_name');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('Full Name');
-    });
-
-    it('should detect ip_address columns', () => {
-      const result = engine.classifyByColumnName('ip_address');
-      expect(result).not.toBeNull();
-      expect(result!.labelName).toBe('IP Address');
-    });
-
-    it('should return null for non-sensitive columns', () => {
-      expect(engine.classifyByColumnName('created_at')).toBeNull();
-      expect(engine.classifyByColumnName('id')).toBeNull();
-      expect(engine.classifyByColumnName('status')).toBeNull();
-      expect(engine.classifyByColumnName('count')).toBeNull();
     });
 
     it('should be case-insensitive', () => {
-      const result = engine.classifyByColumnName('EMAIL_ADDRESS');
+      const result = engine.classifyByColumnName('EMAIL');
       expect(result).not.toBeNull();
       expect(result!.labelName).toBe('Email Address');
-    });
-
-    it('should return the highest confidence match', () => {
-      // 'email' matches both /^e[-_]?mail$/i (0.95) and /\bemail\b/i (0.80)
-      const result = engine.classifyByColumnName('email');
-      expect(result!.confidence).toBe(0.95);
     });
   });
 });

@@ -1,10 +1,15 @@
 import { AbacEngine, AbacContext, AbacPolicy } from '@/core/auth/policies/abac-engine';
+import { ConfigService } from '@nestjs/config';
 
 describe('AbacEngine', () => {
   let engine: AbacEngine;
 
+  const mockConfig = {
+    get: jest.fn().mockImplementation((key: string, defaultValue?: string) => defaultValue),
+  } as unknown as ConfigService;
+
   beforeEach(() => {
-    engine = new AbacEngine();
+    engine = new AbacEngine(mockConfig);
   });
 
   function makeContext(overrides: Partial<AbacContext> = {}): AbacContext {
@@ -72,7 +77,7 @@ describe('AbacEngine', () => {
     expect(result.reason).toContain('clearance');
   });
 
-  it('should allow owner access regardless of clearance', () => {
+  it('should allow owner access when no higher-priority deny matches', () => {
     const ctx = makeContext({
       user: {
         id: 'user-1',
@@ -80,18 +85,19 @@ describe('AbacEngine', () => {
         email: 'test@example.com',
         roles: ['analyst'],
         permissions: ['dspm:findings:read'],
-        clearanceLevel: 1,
+        clearanceLevel: 3,
       },
       resource: {
         type: 'DataSource',
         id: 'resource-1',
         tenantId: 'tenant-1',
         ownerId: 'user-1',
-        sensitivity: 5,
+        sensitivity: 3,
       },
     });
     const result = engine.evaluate(ctx);
     expect(result.allowed).toBe(true);
+    expect(result.matchedPolicy).toBe('owner-access');
   });
 
   it('should allow registering custom policies', () => {

@@ -29,6 +29,12 @@ describe('AuditService', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue({}),
       },
+      $transaction: jest.fn().mockImplementation(async (args) => {
+        if (Array.isArray(args)) {
+          return Promise.all(args);
+        }
+        return args(prisma);
+      }),
     };
 
     const module = await Test.createTestingModule({

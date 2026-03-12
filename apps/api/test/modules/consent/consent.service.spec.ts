@@ -81,6 +81,11 @@ describe('ConsentService', () => {
     it('should record a consent grant and publish event', async () => {
       mockPrisma.dataSubject.findFirst.mockResolvedValue(null);
       mockPrisma.dataSubject.create.mockResolvedValue({ id: 'subject-1' });
+      mockPrisma.consentNotice.findFirst.mockResolvedValue({
+        id: 'notice-1',
+        purposes: ['purpose-1'],
+        version: 1,
+      });
       mockPrisma.consentRecord.create.mockResolvedValue({
         id: 'record-1',
         status: 'granted',
@@ -95,7 +100,8 @@ describe('ConsentService', () => {
 
       const result = await service.recordConsent('tenant-1', 'user-1', dto);
 
-      expect(result.status).toBe('granted');
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toBe('granted');
       expect(mockEvents.publish).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'consent.granted' }),
       );
@@ -104,24 +110,20 @@ describe('ConsentService', () => {
 
   describe('revokeConsent', () => {
     it('should revoke an active consent record', async () => {
-      mockPrisma.consentRecord.findFirst.mockResolvedValue({
-        id: 'record-1',
-        status: 'granted',
-      });
-      mockPrisma.consentRecord.update.mockResolvedValue({
-        id: 'record-1',
-        status: 'revoked',
-      });
+      mockPrisma.dataSubject.findFirst.mockResolvedValue({ id: 'subject-1' });
+      mockPrisma.consentRecord.findMany.mockResolvedValue([
+        { id: 'record-1', status: 'granted', purposeId: 'purpose-1' },
+      ]);
+      (mockPrisma.consentRecord as any).updateMany = jest.fn().mockResolvedValue({ count: 1 });
 
       const dto = {
         dataSubjectIdentifier: 'user@test.com',
         noticeId: 'notice-1',
       };
-      mockPrisma.dataSubject.findFirst.mockResolvedValue({ id: 'subject-1' });
 
       const result = await service.revokeConsent('tenant-1', 'user-1', dto);
 
-      expect(result.status).toBe('revoked');
+      expect(result.revokedCount).toBe(1);
       expect(mockEvents.publish).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'consent.revoked' }),
       );

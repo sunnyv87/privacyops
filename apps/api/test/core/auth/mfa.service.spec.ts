@@ -14,7 +14,7 @@ describe('MfaService', () => {
       expect(result.secret).toBeDefined();
       expect(result.secret.length).toBeGreaterThan(10);
       expect(result.otpauthUrl).toContain('otpauth://totp/');
-      expect(result.otpauthUrl).toContain('user@example.com');
+      expect(result.otpauthUrl).toContain('user%40example.com');
       expect(result.qrCodeDataUrl).toContain('data:image/png;base64');
     });
   });
@@ -48,7 +48,7 @@ describe('MfaService', () => {
       const unique = new Set(codes);
       expect(unique.size).toBe(8);
       codes.forEach((code) => {
-        expect(code).toMatch(/^[a-f0-9]+-[a-f0-9]+$/);
+        expect(code).toMatch(/^[a-f0-9]{8}$/);
       });
     });
   });

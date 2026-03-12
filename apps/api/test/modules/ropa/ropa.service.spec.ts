@@ -40,12 +40,10 @@ describe('RopaService', () => {
       const tenantId = 'tenant-1';
       const actorId = 'user-1';
       const dto = {
-        title: 'Customer Onboarding Processing',
         processingPurpose: 'Processing customer data for account creation',
         lawfulBasis: 'contract',
         dataSubjectCategories: ['customers', 'prospects'],
-        personalDataCategories: ['name', 'email', 'phone'],
-        ownerId: actorId,
+        dataCategories: ['name', 'email', 'phone'],
       };
 
       const created = { id: 'ropa-1', tenantId, status: 'draft', ...dto };
@@ -58,7 +56,7 @@ describe('RopaService', () => {
       expect(mockPrisma.ropaEntry.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           tenantId,
-          title: dto.title,
+          title: dto.processingPurpose,
           lawfulBasis: 'contract',
           dataSubjectCategories: ['customers', 'prospects'],
           personalDataCategories: ['name', 'email', 'phone'],
@@ -66,7 +64,7 @@ describe('RopaService', () => {
       });
       expect(mockAudit.log).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: 'ropa_entry.created',
+          action: 'ropa.created',
           entityType: 'ropa_entry',
         }),
       );

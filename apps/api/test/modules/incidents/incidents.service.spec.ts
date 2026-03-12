@@ -37,13 +37,12 @@ describe('IncidentsService', () => {
 
   describe('create', () => {
     it('should create an incident with reference number', async () => {
-      mockPrisma.incident.count.mockResolvedValue(3);
-      mockPrisma.incident.create.mockResolvedValue({
-        id: 'inc-1',
-        reference: 'INC-2026-0004',
-        severity: 'p1',
-        status: 'reported',
-        isBreach: false,
+      mockPrisma.incident.findFirst.mockResolvedValue(null);
+      mockPrisma.incident.create.mockImplementation(({ data }: any) => {
+        return Promise.resolve({
+          id: 'inc-1',
+          ...data,
+        });
       });
 
       const result = await service.create('tenant-1', 'user-1', {
@@ -52,19 +51,18 @@ describe('IncidentsService', () => {
         description: 'Detected unauthorized access to PII data',
       });
 
-      expect(result.reference).toMatch(/^INC-\d{4}-\d{4}$/);
+      expect(result.referenceNumber).toMatch(/^INC-\d{4}-\d{4}$/);
       expect(mockEvents.publish).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'incident.reported' }),
       );
     });
 
     it('should set 72-hour notification deadline for breaches', async () => {
-      mockPrisma.incident.count.mockResolvedValue(0);
-      mockPrisma.incident.create.mockImplementation(({ data }) => {
+      mockPrisma.incident.findFirst.mockResolvedValue(null);
+      mockPrisma.incident.create.mockImplementation(({ data }: any) => {
         return Promise.resolve({
           id: 'inc-1',
           ...data,
-          breachNotificationDeadline: data.breachNotificationDeadline,
         });
       });
 
@@ -75,7 +73,9 @@ describe('IncidentsService', () => {
         isBreach: true,
       });
 
-      expect(result.breachNotificationDeadline).toBeDefined();
+      expect(result.regulatoryNotifications).toBeDefined();
+      expect(result.regulatoryNotifications.deadlines).toBeDefined();
+      expect(result.regulatoryNotifications.deadlines.gdpr).toBeDefined();
     });
   });
 });

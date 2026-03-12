@@ -86,8 +86,43 @@ services:
     volumes:
       - minio_data:/data
 
+  # ── Observability Stack ──────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    ports:
+      - '16686:16686'   # UI
+      - '4318:4318'     # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - '3001:3000'
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=privacyops
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/system-overview.json
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+
 volumes:
   postgres_data:
   redis_data:
   opensearch_data:
   minio_data:
+  prometheus_data:
+  grafana_data:

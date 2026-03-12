@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import * as snowflake from 'snowflake-sdk';
 import {
   ConnectorConfig,
@@ -13,6 +14,7 @@ import {
 import { BaseConnector } from '../sdk/base-connector';
 
 export class SnowflakeConnector extends BaseConnector {
+  private readonly logger = new Logger(SnowflakeConnector.name);
   private connection: snowflake.Connection;
   private database: string;
 
@@ -158,7 +160,7 @@ export class SnowflakeConnector extends BaseConnector {
           };
         }
       } catch (error: any) {
-        console.warn(
+        this.logger.warn(
           `Error listing tables/views in ${schemaName}: ${error.message}`,
         );
       }
@@ -251,7 +253,7 @@ export class SnowflakeConnector extends BaseConnector {
         });
       }
     } catch (error: any) {
-      console.warn(`Error fetching grants: ${error.message}`);
+      this.logger.warn(`Error fetching grants: ${error.message}`);
     }
 
     return policies;

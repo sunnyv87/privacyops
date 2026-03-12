@@ -1,0 +1,187 @@
+{{- if .Values.observability.prometheus.rules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Release.Name }}-alerts
+  labels:
+    app: {{ .Release.Name }}
+    release: {{ .Release.Name }}
+spec:
+  groups:
+    # ── API Health ─────────────────────────────────────────────────────────
+    - name: privacyops.api
+      rules:
+        - alert: API5xxErrorSpike
+          expr: |
+            (
+              sum(rate(http_errors_total[5m])) /
+              max(sum(rate(http_requests_total[5m])), 1)
+            ) > 0.05
+          for: 2m
+          labels:
+            severity: critical
+            service: api
+          annotations:
+            summary: "API 5xx error rate above 5%"
+            description: "5xx error rate is {{ `{{ $value | humanizePercentage }}` }} over the last 5 minutes."
+
+        - alert: APILatencyDegradation
+          expr: |
+            histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+            > 2
+          for: 5m
+          labels:
+            severity: warning
+            service: api
+          annotations:
+            summary: "API p95 latency above 2 seconds"
+            description: "p95 latency is {{ `{{ $value | humanizeDuration }}` }}."
+
+    # ── Dependencies ───────────────────────────────────────────────────────
+    - name: privacyops.dependencies
+      rules:
+        - alert: PostgreSQLDown
+          expr: dependency_up{dependency="postgresql"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            service: postgresql
+          annotations:
+            summary: "PostgreSQL connectivity lost"
+
+        - alert: RedisDown
+          expr: dependency_up{dependency="redis"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            service: redis
+          annotations:
+            summary: "Redis connectivity lost"
+
+        - alert: NATSDown
+          expr: dependency_up{dependency="nats"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: nats
+          annotations:
+            summary: "NATS connectivity lost"
+
+        - alert: TemporalDown
+          expr: dependency_up{dependency="temporal"} == 0
+          for: 2m
+          labels:
+            severity: warning
+            service: temporal
+          annotations:
+            summary: "Temporal connectivity lost — workflow execution impacted"
+
+        - alert: OpenSearchDown
+          expr: dependency_up{dependency="opensearch"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: opensearch
+          annotations:
+            summary: "OpenSearch connectivity lost — search degraded"
+
+    # ── Connectors ─────────────────────────────────────────────────────────
+    - name: privacyops.connectors
+      rules:
+        - alert: ConnectorSyncFailure
+          expr: increase(connector_sync_errors_total[15m]) > 3
+          for: 1m
+          labels:
+            severity: warning
+            service: connectors
+          annotations:
+            summary: "Connector sync failures detected"
+            description: "{{ `{{ $labels.connector_type }}` }} connector has {{ `{{ $value }}` }} failures in 15m."
+
+        - alert: ConnectorHealthUnhealthy
+          expr: connector_health_status == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: connectors
+          annotations:
+            summary: "Connector {{ `{{ $labels.data_source_id }}` }} unhealthy for 5+ minutes"
+
+    # ── Event Pipeline ─────────────────────────────────────────────────────
+    - name: privacyops.events
+      rules:
+        - alert: EventConsumerFailure
+          expr: increase(event_failed_total[10m]) > 5
+          for: 1m
+          labels:
+            severity: warning
+            service: events
+          annotations:
+            summary: "Event consumer failures detected"
+            description: "{{ `{{ $labels.event_type }}` }} has {{ `{{ $value }}` }} failures in 10m."
+
+        - alert: HighDeadLetterQueueCount
+          expr: increase(event_dlq_total[30m]) > 10
+          for: 1m
+          labels:
+            severity: critical
+            service: events
+          annotations:
+            summary: "High DLQ accumulation"
+            description: "{{ `{{ $value }}` }} events sent to DLQ in 30m."
+
+    # ── Workflows ──────────────────────────────────────────────────────────
+    - name: privacyops.workflows
+      rules:
+        - alert: WorkflowStuckBeyondSLA
+          expr: |
+            (time() - workflow_execution_duration_seconds_sum / workflow_execution_duration_seconds_count)
+            > 86400
+          for: 10m
+          labels:
+            severity: warning
+            service: workflows
+          annotations:
+            summary: "Workflow execution exceeding 24h SLA"
+
+        - alert: WorkflowErrorRate
+          expr: increase(workflow_errors_total[1h]) > 5
+          for: 5m
+          labels:
+            severity: warning
+            service: workflows
+          annotations:
+            summary: "Workflow failure rate elevated"
+
+    # ── Critical Business Flows ────────────────────────────────────────────
+    - name: privacyops.business
+      rules:
+        - alert: BreachWorkflowFailure
+          expr: increase(workflow_errors_total{workflow_type="breach"}[1h]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            service: breach
+          annotations:
+            summary: "Breach response workflow failed — regulatory SLA at risk"
+
+        - alert: RiskEngineFailure
+          expr: |
+            increase(risk_score_calculation_duration_seconds_count[10m]) == 0
+            and increase(http_requests_total{route=~".*risk.*"}[10m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+            service: risk
+          annotations:
+            summary: "Risk scoring engine appears stalled"
+
+        - alert: RemediationExecutionFailure
+          expr: increase(workflow_errors_total{workflow_type="remediation"}[1h]) > 2
+          for: 1m
+          labels:
+            severity: warning
+            service: remediation
+          annotations:
+            summary: "Remediation execution failures detected"
+{{- end }}

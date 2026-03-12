@@ -1,0 +1,21 @@
+{{- if .Values.observability.prometheus.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    app: {{ .Release.Name }}-api
+    release: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-api
+  endpoints:
+    - port: http
+      path: /api/v1/metrics
+      interval: {{ .Values.observability.prometheus.serviceMonitor.interval | default "15s" }}
+      scrapeTimeout: {{ .Values.observability.prometheus.serviceMonitor.scrapeTimeout | default "10s" }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+{{- end }}

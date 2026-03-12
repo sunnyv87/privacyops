@@ -25,6 +25,17 @@ export class EventConsumersService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Late-bind PrometheusService into EventBusService (avoids circular DI)
+    try {
+      const { PrometheusService } = await import('@/core/telemetry/prometheus.service');
+      const prometheus = this.moduleRef.get(PrometheusService, { strict: false });
+      if (prometheus) {
+        this.events.setPrometheus(prometheus);
+      }
+    } catch {
+      // PrometheusService may not be available in test environments
+    }
+
     await this.registerConsumers();
   }
 

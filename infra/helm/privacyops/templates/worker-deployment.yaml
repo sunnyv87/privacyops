@@ -37,6 +37,24 @@ spec:
               value: privacyops
             - name: NATS_URL
               value: {{ .Values.nats.url | quote }}
+            - name: WORKER_HEALTH_PORT
+              value: "4001"
+          ports:
+            - containerPort: 4001
+              protocol: TCP
+              name: health
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 4001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4001
+            initialDelaySeconds: 20
+            periodSeconds: 20
           resources:
             {{- toYaml .Values.temporalWorker.resources | nindent 12 }}
 ---

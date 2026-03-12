@@ -110,3 +110,18 @@ s3:
   bucket: privacyops-data
   region: ap-south-1
   existingSecret: privacyops-s3-credentials
+
+# Observability
+observability:
+  prometheus:
+    serviceMonitor:
+      enabled: true
+      interval: "15s"
+      scrapeTimeout: "10s"
+    rules:
+      enabled: true
+  tracing:
+    enabled: true
+    endpoint: "http://jaeger-collector:4318"
+    serviceName: "privacyops-api"
+    samplingRate: 0.1

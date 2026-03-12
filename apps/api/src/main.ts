@@ -1,10 +1,19 @@
+// OpenTelemetry MUST be initialised before any other imports
+import { initTracing, shutdownTracing } from './core/telemetry/tracing';
+initTracing();
+
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { StructuredLogger } from './core/telemetry/structured-logger.service';
+import { CorrelationIdMiddleware } from './core/telemetry/correlation-id.middleware';
+import { GlobalExceptionFilter } from './core/telemetry/global-exception.filter';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
+
   // Validate critical secrets at startup
   const jwtSecret = process.env.JWT_SECRET;
   if (
@@ -18,15 +27,21 @@ async function bootstrap() {
         'JWT_SECRET must be at least 32 characters and not a default value in production',
       );
     }
-    console.warn(
-      '⚠ WARNING: Using weak JWT_SECRET. Set a strong 256-bit secret for production.',
+    logger.warn(
+      'Using weak JWT_SECRET. Set a strong 256-bit secret for production.',
     );
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: new StructuredLogger(),
+  });
 
   // Security
   app.use(helmet());
+
+  // Correlation ID middleware — must run before request logger
+  const correlationMiddleware = new CorrelationIdMiddleware();
+  app.use(correlationMiddleware.use.bind(correlationMiddleware));
 
   // Structured request logging
   const { RequestLoggerMiddleware } = await import(
@@ -34,10 +49,14 @@ async function bootstrap() {
   );
   const requestLogger = new RequestLoggerMiddleware();
   app.use(requestLogger.use.bind(requestLogger));
+
   app.enableCors({
     origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
     credentials: true,
   });
+
+  // Global exception filter
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -66,8 +85,19 @@ async function bootstrap() {
 
   const port = process.env.PORT || 4000;
   await app.listen(port);
-  console.log(`PrivacyOps API running on port ${port}`);
-  console.log(`Swagger docs: http://localhost:${port}/api/docs`);
+  logger.log(`PrivacyOps API running on port ${port}`);
+  logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
+
+  // Graceful shutdown
+  const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
+  for (const signal of signals) {
+    process.on(signal, async () => {
+      logger.log(`Received ${signal}, shutting down...`);
+      await app.close();
+      await shutdownTracing();
+      process.exit(0);
+    });
+  }
 }
 
 bootstrap();

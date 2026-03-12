@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Storage, Bucket } from '@google-cloud/storage';
 import {
   ConnectorConfig,
@@ -12,6 +13,7 @@ import {
 import { BaseConnector } from '../sdk/base-connector';
 
 export class GcpStorageConnector extends BaseConnector {
+  private readonly logger = new Logger(GcpStorageConnector.name);
   private storage: Storage | null = null;
   private projectId: string;
 
@@ -102,7 +104,7 @@ export class GcpStorageConnector extends BaseConnector {
           };
         }
       } catch (error: any) {
-        console.warn(
+        this.logger.warn(
           `Error listing objects in ${bucket.name}: ${error.message}`,
         );
       }

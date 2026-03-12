@@ -15,6 +15,7 @@ export class RequestLoggerMiddleware implements NestMiddleware {
       const { statusCode } = res;
       const tenantId = (req as any).user?.tenantId || '-';
       const userId = (req as any).user?.id || '-';
+      const correlationId = (req as any).correlationId || '-';
 
       const logEntry = {
         method,
@@ -25,15 +26,16 @@ export class RequestLoggerMiddleware implements NestMiddleware {
         userAgent,
         tenantId,
         userId,
+        correlationId,
         timestamp: new Date().toISOString(),
       };
 
       if (statusCode >= 500) {
-        this.logger.error(JSON.stringify(logEntry));
+        this.logger.error(logEntry);
       } else if (statusCode >= 400) {
-        this.logger.warn(JSON.stringify(logEntry));
+        this.logger.warn(logEntry);
       } else {
-        this.logger.log(JSON.stringify(logEntry));
+        this.logger.log(logEntry);
       }
     });
 

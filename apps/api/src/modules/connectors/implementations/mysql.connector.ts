@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   ConnectorConfig,
   ConnectionTestResult,
@@ -12,6 +13,7 @@ import { BaseConnector } from '../sdk/base-connector';
 import { createPool, Pool } from 'mysql2/promise';
 
 export class MysqlConnector extends BaseConnector {
+  private readonly logger = new Logger(MysqlConnector.name);
   private pool: Pool;
 
   protected async doInitialize(config: ConnectorConfig): Promise<void> {
@@ -99,7 +101,7 @@ export class MysqlConnector extends BaseConnector {
           };
         }
       } catch (error: any) {
-        console.warn(`Error listing tables in ${dbName}: ${error.message}`);
+        this.logger.warn(`Error listing tables in ${dbName}: ${error.message}`);
       }
     }
   }
@@ -190,7 +192,7 @@ export class MysqlConnector extends BaseConnector {
         });
       }
     } catch (error: any) {
-      console.warn(`Error fetching grants: ${error.message}`);
+      this.logger.warn(`Error fetching grants: ${error.message}`);
     }
 
     return policies;

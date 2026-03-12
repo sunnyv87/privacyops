@@ -13,3 +13,8 @@ data:
   S3_REGION: {{ .Values.s3.region | quote }}
   S3_BUCKET: {{ .Values.s3.bucket | quote }}
   CORS_ORIGINS: "https://app.privacyops.techd.com"
+  LOG_LEVEL: "log"
+  OTEL_ENABLED: {{ .Values.observability.tracing.enabled | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.observability.tracing.serviceName | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.observability.tracing.endpoint | quote }}
+  WORKER_HEALTH_PORT: "4001"

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   S3Client,
   ListBucketsCommand,
@@ -21,6 +22,7 @@ import {
 } from '../interfaces/connector.interface';
 
 export class AwsS3Connector implements IConnector {
+  private readonly logger = new Logger(AwsS3Connector.name);
   private client!: S3Client;
   private config!: ConnectorConfig;
 
@@ -99,7 +101,7 @@ export class AwsS3Connector implements IConnector {
           };
         }
       } catch (error: any) {
-        console.warn(`Error listing objects in ${bucket.Name}: ${error.message}`);
+        this.logger.warn(`Error listing objects in ${bucket.Name}: ${error.message}`);
       }
     }
   }

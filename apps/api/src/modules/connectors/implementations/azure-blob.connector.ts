@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   BlobServiceClient,
   StorageSharedKeyCredential,
@@ -49,6 +50,7 @@ function parseBlobPath(assetExternalId: string): {
 }
 
 export class AzureBlobConnector extends BaseConnector {
+  private readonly logger = new Logger(AzureBlobConnector.name);
   private client: BlobServiceClient | null = null;
 
   protected async doInitialize(config: ConnectorConfig): Promise<void> {
@@ -136,7 +138,7 @@ export class AzureBlobConnector extends BaseConnector {
           };
         }
       } catch (error: any) {
-        console.warn(
+        this.logger.warn(
           `Error listing blobs in ${container.name}: ${error.message}`,
         );
       }
@@ -302,7 +304,7 @@ export class AzureBlobConnector extends BaseConnector {
         }
       }
     } catch (error: any) {
-      console.warn(`Error fetching access policies: ${error.message}`);
+      this.logger.warn(`Error fetching access policies: ${error.message}`);
     }
 
     return policies;

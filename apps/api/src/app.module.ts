@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 
 // Core modules
 import { PrismaModule } from './core/prisma/prisma.module';
@@ -23,6 +23,11 @@ import { CsrfGuard } from './core/security/csrf.guard';
 
 // Interceptors
 import { FieldMaskInterceptor } from './core/auth/interceptors/field-mask.interceptor';
+import { MetricsInterceptor } from './modules/observability/metrics.interceptor';
+
+// Telemetry
+import { TelemetryModule } from './core/telemetry/telemetry.module';
+import { GlobalExceptionFilter } from './core/telemetry/global-exception.filter';
 
 // Feature modules (existing)
 import { ConnectorsModule } from './modules/connectors/connectors.module';
@@ -80,6 +85,7 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
     NotificationsModule,
     SecurityEventsModule,
     HealthModule,
+    TelemetryModule,
 
     // Feature modules (existing — upgraded)
     UsersModule,
@@ -123,6 +129,9 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
     { provide: APP_GUARD, useClass: PermissionsGuard },
     // Global interceptors
     { provide: APP_INTERCEPTOR, useClass: FieldMaskInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
+    // Global exception filter
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
   ],
 })
 export class AppModule {}

@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { connect, NatsConnection, JSONCodec, JetStreamManager, JetStreamClient } from 'nats';
+import { CorrelationIdMiddleware } from '@/core/telemetry/correlation-id.middleware';
+import { PrometheusService } from '@/core/telemetry/prometheus.service';
 
 export interface PlatformEvent {
   type: string;
@@ -21,7 +23,14 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
   private codec = JSONCodec();
   private eventCounts = new Map<string, { success: number; failure: number }>();
 
+  private prometheus: PrometheusService | null = null;
+
   constructor(private readonly config: ConfigService) {}
+
+  /** Late-bind PrometheusService to avoid circular DI during module init. */
+  setPrometheus(prometheus: PrometheusService) {
+    this.prometheus = prometheus;
+  }
 
   async onModuleInit() {
     try {
@@ -69,6 +78,11 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
   }
 
   async publish(event: PlatformEvent): Promise<void> {
+    // Auto-populate correlationId from request context if not set
+    if (!event.correlationId) {
+      event.correlationId = CorrelationIdMiddleware.getCorrelationId();
+    }
+
     const subject = `privacyops.${event.type}`;
     const payload = {
       ...event,
@@ -80,6 +94,8 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     } else {
       this.logger.log(`[Event] ${subject}: ${JSON.stringify(payload)}`);
     }
+
+    this.prometheus?.eventPublishedTotal.inc({ event_type: event.type });
   }
 
   async subscribe(
@@ -99,15 +115,22 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     (async () => {
       for await (const msg of sub) {
         let event: PlatformEvent | undefined;
+        const eventStart = Date.now();
         try {
           event = this.codec.decode(msg.data) as PlatformEvent;
           await this.executeWithRetry(subject, handler, event);
           msg.ack();
           this.recordMetric(subject, true);
+          this.prometheus?.eventConsumedTotal.inc({ event_type: subject });
+          this.prometheus?.eventProcessingDuration.observe(
+            { event_type: subject },
+            (Date.now() - eventStart) / 1000,
+          );
         } catch (error) {
           this.logger.error(`All retries exhausted for ${subject}: ${error}`);
           msg.ack(); // Ack to prevent infinite redelivery
           this.recordMetric(subject, false);
+          this.prometheus?.eventFailedTotal.inc({ event_type: subject });
           // Publish to DLQ
           if (event) {
             await this.publishToDlq(subject, event, error);
@@ -155,6 +178,7 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
         this.codec.encode(dlqPayload),
       );
       this.logger.warn(`Event sent to DLQ: ${event.type}`);
+      this.prometheus?.eventDlqTotal.inc({ event_type: event.type });
     } catch (dlqError) {
       this.logger.error(`Failed to publish to DLQ: ${dlqError}`);
     }

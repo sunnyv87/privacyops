@@ -94,6 +94,32 @@ export class GraphAnalyticsService {
       throw new NotFoundException(`Graph node ${nodeId} not found`);
     }
 
+    // Preload all nodes, edges, and risk profiles for the tenant in 3 queries
+    // instead of N queries per BFS iteration.
+    const [allNodes, allEdges, allRiskProfiles] = await Promise.all([
+      this.prisma.dataGraphNode.findMany({
+        where: { tenantId },
+        select: { id: true, entityId: true, nodeType: true, label: true },
+      }),
+      this.prisma.dataGraphEdge.findMany({
+        where: { tenantId },
+        select: { sourceNodeId: true, targetNodeId: true },
+      }),
+      this.prisma.entityRiskProfile.findMany({
+        where: { tenantId },
+        select: { entityId: true, compositeScore: true },
+      }),
+    ]);
+
+    // Build lookup maps
+    const nodeMap = new Map(allNodes.map((n) => [n.id, n]));
+    const riskMap = new Map(allRiskProfiles.map((r) => [r.entityId, Number(r.compositeScore)]));
+    const adjacency = new Map<string, string[]>();
+    for (const edge of allEdges) {
+      if (!adjacency.has(edge.sourceNodeId)) adjacency.set(edge.sourceNodeId, []);
+      adjacency.get(edge.sourceNodeId)!.push(edge.targetNodeId);
+    }
+
     // BFS from node following edges, collect risk scores
     const visited = new Set<string>([nodeId]);
     const queue: { nodeId: string; depth: number; path: string[] }[] = [
@@ -114,28 +140,12 @@ export class GraphAnalyticsService {
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-
-      // Get connected node info
-      const node = await this.prisma.dataGraphNode.findFirst({
-        where: { id: current.nodeId, tenantId },
-      });
-
+      const node = nodeMap.get(current.nodeId);
       if (!node) continue;
 
-      // Look up risk score via EntityRiskProfile
-      const riskProfile = await this.prisma.entityRiskProfile.findFirst({
-        where: {
-          tenantId,
-          entityId: node.entityId,
-        },
-      });
-
-      const riskScore = riskProfile
-        ? Number(riskProfile.compositeScore)
-        : null;
+      const riskScore = riskMap.get(node.entityId) ?? null;
 
       if (riskScore !== null) {
-        // Risk diminishes with depth
         const attenuatedRisk = riskScore * Math.pow(0.7, current.depth);
         cumulativeRisk += attenuatedRisk;
       }
@@ -150,21 +160,14 @@ export class GraphAnalyticsService {
         path: current.path,
       });
 
-      // Get edges from current node
-      const edges = await this.prisma.dataGraphEdge.findMany({
-        where: {
-          tenantId,
-          sourceNodeId: current.nodeId,
-        },
-      });
-
-      for (const edge of edges) {
-        if (!visited.has(edge.targetNodeId)) {
-          visited.add(edge.targetNodeId);
+      const neighbors = adjacency.get(current.nodeId) ?? [];
+      for (const targetId of neighbors) {
+        if (!visited.has(targetId)) {
+          visited.add(targetId);
           queue.push({
-            nodeId: edge.targetNodeId,
+            nodeId: targetId,
             depth: current.depth + 1,
-            path: [...current.path, edge.targetNodeId],
+            path: [...current.path, targetId],
           });
         }
       }

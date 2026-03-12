@@ -1057,6 +1057,9 @@ model DataGraphEdge {
   @@index([sourceNodeId])
   @@index([targetNodeId])
   @@index([relationshipType])
+  @@index([tenantId, sourceNodeId])
+  @@index([tenantId, targetNodeId])
+  @@index([sourceNodeId, targetNodeId, relationshipType])
   @@map("data_graph_edges")
 }
 

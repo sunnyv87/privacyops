@@ -82,7 +82,7 @@ export abstract class BaseConnector implements IConnector {
       name: String(col.name || col.column_name || col.COLUMN_NAME || ''),
       dataType: String(col.dataType || col.data_type || col.DATA_TYPE || 'unknown'),
       ordinalPosition: col.ordinalPosition ?? col.ordinal_position ?? idx,
-      nullable: col.nullable ?? col.is_nullable === 'YES' ?? true,
+      nullable: col.nullable != null ? col.nullable : col.is_nullable != null ? col.is_nullable === 'YES' : true,
     }));
   }
 }

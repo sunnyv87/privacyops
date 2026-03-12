@@ -3,6 +3,7 @@ import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { Classifier, ClassificationPattern } from './engine/classifier';
+import { SchemaHeuristicsEngine } from './engine/schema-heuristics';
 import {
   ClassifyAssetDto,
   CreateLabelDto,
@@ -13,6 +14,7 @@ import {
 export class ClassificationService {
   private readonly logger = new Logger(ClassificationService.name);
   private readonly classifier = new Classifier();
+  private readonly heuristics = new SchemaHeuristicsEngine();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -114,6 +116,46 @@ export class ClassificationService {
             labelName: result.labelName,
             fieldName: field.name,
           });
+        }
+      }
+
+      // 3b. Schema heuristic fallback — classify by column name patterns
+      // Runs if the main classifier found no results for this field
+      if (results.length === 0 || results.every((r) => r.confidence < 0.5)) {
+        const heuristicMatch = this.heuristics.classifyByColumnName(field.name);
+        if (heuristicMatch) {
+          // Find a matching label by name
+          const matchingLabel = labels.find(
+            (l) => l.name.toLowerCase() === heuristicMatch.labelName.toLowerCase(),
+          );
+          if (matchingLabel) {
+            const existingHeuristic = await this.prisma.classification.findFirst({
+              where: {
+                tenantId,
+                assetId: asset.id,
+                assetFieldId: field.id,
+                labelId: matchingLabel.id,
+              },
+            });
+            if (!existingHeuristic) {
+              const classification = await this.prisma.classification.create({
+                data: {
+                  tenantId,
+                  assetId: asset.id,
+                  assetFieldId: field.id,
+                  labelId: matchingLabel.id,
+                  confidence: heuristicMatch.confidence,
+                  method: 'heuristic',
+                  status: 'auto_applied',
+                },
+              });
+              classifications.push({
+                ...classification,
+                labelName: heuristicMatch.labelName,
+                fieldName: field.name,
+              });
+            }
+          }
         }
       }
     }

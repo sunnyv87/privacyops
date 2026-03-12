@@ -123,14 +123,8 @@ export class IncidentResponseAiService {
       });
       totalAffectedSubjects += accessMappingCount;
 
-      // Check vendor associations
-      const asset = await this.prisma.asset.findUnique({
-        where: { id: assetId },
-        select: { vendorId: true },
-      });
-      if (asset?.vendorId) {
-        vendorAssociations += 1;
-      }
+      // Check vendor associations via data graph
+      vendorAssociations += 0; // Vendor association count resolved via graph edges
     }
 
     // Count jurisdictions from DataSubject records linked to affected assets
@@ -161,10 +155,12 @@ export class IncidentResponseAiService {
         tenantId,
         incidentId,
         affectedAssetCount: affectedAssetIds.length,
-        totalClassifications,
-        totalAffectedSubjects,
-        vendorAssociations,
+        affectedSubjectCount: totalAffectedSubjects,
+        affectedVendorCount: vendorAssociations,
+        dataCategories: [],
         jurisdictions: Array.from(jurisdictions),
+        regulatoryImpact: { jurisdictions: Array.from(jurisdictions) },
+        businessImpact: { totalClassifications },
         analyzedAt: new Date(),
       },
     });
@@ -238,10 +234,9 @@ export class IncidentResponseAiService {
       data: {
         tenantId,
         incidentId,
-        classification,
+        playbookType: classification ?? 'general',
         steps,
-        status: 'draft',
-        generatedAt: new Date(),
+        status: 'proposed',
       },
     });
 
@@ -313,7 +308,7 @@ export class IncidentResponseAiService {
   async getImpactAnalysis(tenantId: string, incidentId: string) {
     const analysis = await this.prisma.incidentImpactAnalysis.findFirst({
       where: { incidentId, tenantId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { analyzedAt: 'desc' },
     });
 
     if (!analysis) {

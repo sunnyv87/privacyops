@@ -4,8 +4,10 @@ import { MetricsCollectorService } from './metrics-collector.service';
 import { ConnectorHealthService } from './connector-health.service';
 import { PlatformAlertService } from './platform-alert.service';
 import { MetricsInterceptor } from './metrics.interceptor';
+import { ConnectorsModule } from '@/modules/connectors/connectors.module';
 
 @Module({
+  imports: [ConnectorsModule],
   controllers: [ObservabilityController],
   providers: [MetricsCollectorService, ConnectorHealthService, PlatformAlertService, MetricsInterceptor],
   exports: [MetricsCollectorService, ConnectorHealthService, PlatformAlertService, MetricsInterceptor],

@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { TemporalClient } from './temporal.client';
 import { PrismaService } from '@/core/prisma/prisma.service';
+import { WorkflowGateway } from './workflow.gateway';
 
 export const TASK_QUEUES = {
   SCAN: 'scan-queue',
@@ -19,6 +20,7 @@ export class WorkflowService {
   constructor(
     private readonly temporal: TemporalClient,
     private readonly prisma: PrismaService,
+    @Optional() private readonly gateway?: WorkflowGateway,
   ) {}
 
   async startScanWorkflow(input: {
@@ -38,6 +40,10 @@ export class WorkflowService {
     });
 
     this.logger.log(`Started scan workflow: ${handle.workflowId}`);
+    this.gateway?.emitWorkflowStarted(input.tenantId, {
+      workflowId: handle.workflowId, type: 'scan',
+      entityType: 'scanJob', entityId: input.scanJobId,
+    });
     return handle.workflowId;
   }
 
@@ -59,6 +65,10 @@ export class WorkflowService {
     });
 
     this.logger.log(`Started DSAR workflow: ${handle.workflowId}`);
+    this.gateway?.emitWorkflowStarted(input.tenantId, {
+      workflowId: handle.workflowId, type: 'dsar',
+      entityType: 'dsarRequest', entityId: input.requestId,
+    });
     return handle.workflowId;
   }
 
@@ -80,6 +90,10 @@ export class WorkflowService {
     });
 
     this.logger.log(`Started breach workflow: ${handle.workflowId}`);
+    this.gateway?.emitWorkflowStarted(input.tenantId, {
+      workflowId: handle.workflowId, type: 'breach',
+      entityType: 'incident', entityId: input.incidentId,
+    });
     return handle.workflowId;
   }
 
@@ -140,6 +154,10 @@ export class WorkflowService {
     });
 
     this.logger.log(`Started remediation workflow: ${handle.workflowId}`);
+    this.gateway?.emitWorkflowStarted(input.tenantId, {
+      workflowId: handle.workflowId, type: 'remediation',
+      entityType: 'finding', entityId: input.findingId,
+    });
     return handle.workflowId;
   }
 
@@ -185,20 +203,19 @@ export class WorkflowService {
   }
 
   async getWorkflowTasks(tenantId: string, workflowId: string) {
-    return this.prisma.workflow_tasks.findMany({
-      where: { tenant_id: tenantId, workflow_id: workflowId },
-      orderBy: { created_at: 'asc' },
+    return this.prisma.workflowTask.findMany({
+      where: { tenantId, workflowId },
+      orderBy: { createdAt: 'asc' },
     });
   }
 
   async updateTaskStatus(tenantId: string, taskId: string, status: string, userId: string) {
-    const task = await this.prisma.workflow_tasks.update({
-      where: { id: taskId, tenant_id: tenantId },
+    const task = await this.prisma.workflowTask.update({
+      where: { id: taskId, tenantId },
       data: {
         status,
-        updated_by: userId,
-        updated_at: new Date(),
-        ...(status === 'completed' ? { completed_at: new Date() } : {}),
+        assigneeId: userId,
+        ...(status === 'completed' ? { completedAt: new Date() } : {}),
       },
     });
 
@@ -216,18 +233,17 @@ export class WorkflowService {
     priority?: string,
     assigneeId?: string,
   ) {
-    const record = await this.prisma.workflows.create({
+    const record = await this.prisma.workflow.create({
       data: {
-        tenant_id: tenantId,
+        tenantId,
         type,
-        entity_type: entityType,
-        entity_id: entityId,
-        temporal_workflow_id: temporalWorkflowId,
-        trigger_type: triggerType ?? 'manual',
+        entityType,
+        entityId,
+        temporalWorkflowId,
+        triggerType: triggerType ?? 'manual',
         priority: priority ?? 'medium',
-        assignee_id: assigneeId,
+        assigneeId,
         status: 'running',
-        created_at: new Date(),
       },
     });
 

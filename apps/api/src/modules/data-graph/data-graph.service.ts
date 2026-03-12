@@ -167,7 +167,31 @@ export class DataGraphService {
     if (!fromNode) throw new NotFoundException(`Source node ${fromNodeId} not found`);
     if (!toNode) throw new NotFoundException(`Target node ${toNodeId} not found`);
 
-    // BFS path finding
+    // Preload all edges for the tenant into an in-memory adjacency list.
+    // This replaces the N+1 per-node query pattern with 1 bulk query.
+    const allEdges = await this.prisma.dataGraphEdge.findMany({
+      where: { tenantId },
+      select: { id: true, sourceNodeId: true, targetNodeId: true, relationshipType: true },
+    });
+
+    const adjacency = new Map<string, { nodeId: string; edgeId: string; relationshipType: string }[]>();
+    for (const edge of allEdges) {
+      // Bidirectional: add to both source and target
+      if (!adjacency.has(edge.sourceNodeId)) adjacency.set(edge.sourceNodeId, []);
+      adjacency.get(edge.sourceNodeId)!.push({
+        nodeId: edge.targetNodeId,
+        edgeId: edge.id,
+        relationshipType: edge.relationshipType,
+      });
+      if (!adjacency.has(edge.targetNodeId)) adjacency.set(edge.targetNodeId, []);
+      adjacency.get(edge.targetNodeId)!.push({
+        nodeId: edge.sourceNodeId,
+        edgeId: edge.id,
+        relationshipType: edge.relationshipType,
+      });
+    }
+
+    // BFS path finding on in-memory adjacency list
     const visited = new Set<string>();
     const queue: { nodeId: string; path: { nodeId: string; edgeId: string; relationshipType: string }[] }[] = [
       { nodeId: fromNodeId, path: [] },
@@ -181,40 +205,19 @@ export class DataGraphService {
 
       if (current.path.length >= maxDepth) continue;
 
-      // Get all edges from current node
-      const edges = await this.prisma.dataGraphEdge.findMany({
-        where: {
-          tenantId,
-          OR: [
-            { sourceNodeId: current.nodeId },
-            { targetNodeId: current.nodeId },
-          ],
-        },
-      });
+      const neighbors = adjacency.get(current.nodeId) ?? [];
 
-      for (const edge of edges) {
-        const nextNodeId =
-          edge.sourceNodeId === current.nodeId
-            ? edge.targetNodeId
-            : edge.sourceNodeId;
+      for (const neighbor of neighbors) {
+        const newPath = [...current.path, neighbor];
 
-        const newPath = [
-          ...current.path,
-          {
-            nodeId: nextNodeId,
-            edgeId: edge.id,
-            relationshipType: edge.relationshipType,
-          },
-        ];
-
-        if (nextNodeId === toNodeId) {
+        if (neighbor.nodeId === toNodeId) {
           paths.push(newPath);
           continue;
         }
 
-        if (!visited.has(nextNodeId)) {
-          visited.add(nextNodeId);
-          queue.push({ nodeId: nextNodeId, path: newPath });
+        if (!visited.has(neighbor.nodeId)) {
+          visited.add(neighbor.nodeId);
+          queue.push({ nodeId: neighbor.nodeId, path: newPath });
         }
       }
     }

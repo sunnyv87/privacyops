@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { EventBusService } from '@/core/events/event-bus.service';
+import { ConnectorRegistry } from '@/modules/connectors/connector-registry';
 
 @Injectable()
 export class ConnectorHealthService {
@@ -9,6 +10,7 @@ export class ConnectorHealthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventBusService,
+    private readonly connectorRegistry: ConnectorRegistry,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -20,30 +22,48 @@ export class ConnectorHealthService {
       where: { id: dataSourceId, tenantId },
     });
 
-    // Simulate health check
     const start = Date.now();
     let healthStatus = 'healthy';
     let errorMessage: string | null = null;
     const checksPerformed = {
-      connectivity: true,
-      authentication: true,
-      readAccess: true,
+      connectivity: false,
+      authentication: false,
+      readAccess: false,
     };
 
     if (!dataSource) {
       healthStatus = 'unreachable';
       errorMessage = `Data source ${dataSourceId} not found`;
-      checksPerformed.connectivity = false;
-      checksPerformed.authentication = false;
-      checksPerformed.readAccess = false;
-    } else if (dataSource.status === 'error') {
-      healthStatus = 'unhealthy';
-      errorMessage = 'Data source is in error state';
-      checksPerformed.readAccess = false;
     } else if (dataSource.status === 'pending_setup') {
       healthStatus = 'degraded';
       errorMessage = 'Data source setup is incomplete';
-      checksPerformed.readAccess = false;
+    } else {
+      // Attempt real connection test via connector SDK
+      try {
+        const connector = this.connectorRegistry.create(dataSource.type as any);
+        await connector.initialize({
+          type: dataSource.type as any,
+          credentials: (dataSource.config as any)?.credentials ?? {},
+          options: (dataSource.config as any)?.options ?? {},
+        });
+        checksPerformed.connectivity = true;
+
+        const testResult = await connector.testConnection();
+        checksPerformed.authentication = testResult.success;
+        checksPerformed.readAccess = testResult.success;
+
+        if (!testResult.success) {
+          healthStatus = 'unhealthy';
+          errorMessage = testResult.message;
+        }
+
+        await connector.disconnect();
+      } catch (err: any) {
+        this.logger.warn(`Health check failed for ${dataSourceId}: ${err.message}`);
+        healthStatus = 'unhealthy';
+        errorMessage = `Connection test failed: ${err.message}`;
+        checksPerformed.connectivity = false;
+      }
     }
 
     const responseTimeMs = Date.now() - start;

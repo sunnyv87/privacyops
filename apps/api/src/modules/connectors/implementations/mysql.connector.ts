@@ -9,43 +9,31 @@ import {
   ConnectorMetadata,
 } from '../interfaces/connector.interface';
 import { BaseConnector } from '../sdk/base-connector';
-
-// TODO: import mysql2 when package is installed
-// import { createPool, Pool } from 'mysql2/promise';
+import { createPool, Pool } from 'mysql2/promise';
 
 export class MysqlConnector extends BaseConnector {
-  private pool: any; // TODO: type as Pool once mysql2 is installed
+  private pool: Pool;
 
   protected async doInitialize(config: ConnectorConfig): Promise<void> {
     const { host, port, database, username, password, ssl } = config.credentials;
 
-    // TODO: Replace with actual mysql2 pool creation
-    // this.pool = createPool({
-    //   host,
-    //   port: port || 3306,
-    //   database,
-    //   user: username,
-    //   password,
-    //   ssl: ssl ? { rejectUnauthorized: false } : undefined,
-    //   waitForConnections: true,
-    //   connectionLimit: 5,
-    // });
-
-    this.pool = {
+    this.pool = createPool({
       host,
       port: port || 3306,
       database,
       user: username,
       password,
-    };
+      ssl: ssl ? { rejectUnauthorized: false } : undefined,
+      waitForConnections: true,
+      connectionLimit: 5,
+    });
   }
 
   async testConnection(): Promise<ConnectionTestResult> {
     try {
       const result = await this.withRetry(async () => {
-        // TODO: const [rows] = await this.pool.query('SELECT VERSION() as version');
-        // return rows[0].version;
-        return 'MySQL (connection pending)';
+        const [rows] = await this.pool.query('SELECT VERSION() as version');
+        return (rows as any[])[0].version;
       }, 'testConnection');
 
       return {
@@ -62,7 +50,7 @@ export class MysqlConnector extends BaseConnector {
   }
 
   async disconnect(): Promise<void> {
-    if (this.pool?.end) {
+    if (this.pool) {
       await this.pool.end();
     }
   }
@@ -70,9 +58,8 @@ export class MysqlConnector extends BaseConnector {
   async *listAssets(): AsyncGenerator<DiscoveredAsset> {
     // List databases
     const databases = await this.withRetry(async () => {
-      // TODO: const [rows] = await this.pool.query('SHOW DATABASES');
-      // return rows.map((r: any) => r.Database);
-      return [] as string[];
+      const [rows] = await this.pool.query('SHOW DATABASES');
+      return (rows as any[]).map((r: any) => r.Database);
     }, 'listDatabases');
 
     for (const dbName of databases) {
@@ -87,15 +74,14 @@ export class MysqlConnector extends BaseConnector {
       // List tables in each database
       try {
         const tables = await this.withRetry(async () => {
-          // TODO: const [rows] = await this.pool.query(
-          //   `SELECT TABLE_NAME, TABLE_TYPE, TABLE_ROWS, DATA_LENGTH
-          //    FROM information_schema.TABLES
-          //    WHERE TABLE_SCHEMA = ?
-          //    ORDER BY TABLE_NAME`,
-          //   [dbName],
-          // );
-          // return rows;
-          return [] as any[];
+          const [rows] = await this.pool.query(
+            `SELECT TABLE_NAME, TABLE_TYPE, TABLE_ROWS, DATA_LENGTH
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = ?
+             ORDER BY TABLE_NAME`,
+            [dbName],
+          );
+          return rows as any[];
         }, 'listTables');
 
         for (const table of tables) {
@@ -122,16 +108,15 @@ export class MysqlConnector extends BaseConnector {
     const [schemaName, tableName] = assetExternalId.split('.');
 
     const columns = await this.withRetry(async () => {
-      // TODO: const [rows] = await this.pool.query(
-      //   `SELECT COLUMN_NAME, DATA_TYPE, ORDINAL_POSITION, IS_NULLABLE, COLUMN_DEFAULT,
-      //           CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION
-      //    FROM information_schema.COLUMNS
-      //    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-      //    ORDER BY ORDINAL_POSITION`,
-      //   [schemaName, tableName],
-      // );
-      // return rows;
-      return [] as any[];
+      const [rows] = await this.pool.query(
+        `SELECT COLUMN_NAME, DATA_TYPE, ORDINAL_POSITION, IS_NULLABLE, COLUMN_DEFAULT,
+                CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+         ORDER BY ORDINAL_POSITION`,
+        [schemaName, tableName],
+      );
+      return rows as any[];
     }, 'getAssetSchema');
 
     return {
@@ -162,13 +147,12 @@ export class MysqlConnector extends BaseConnector {
 
     const columnNames = columns.map((c) => `\`${c.name}\``).join(', ');
     const rows = await this.withRetry(async () => {
-      // TODO: const query =
-      //   options.sampleStrategy === 'random'
-      //     ? `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` ORDER BY RAND() LIMIT ?`
-      //     : `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` LIMIT ?`;
-      // const [rows] = await this.pool.query(query, [options.maxRows]);
-      // return rows;
-      return [] as any[];
+      const query =
+        options.sampleStrategy === 'random'
+          ? `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` ORDER BY RAND() LIMIT ?`
+          : `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` LIMIT ?`;
+      const [rows] = await this.pool.query(query, [options.maxRows]);
+      return rows as any[];
     }, 'sampleContent');
 
     for (const column of columns) {
@@ -192,9 +176,8 @@ export class MysqlConnector extends BaseConnector {
 
     try {
       const grants = await this.withRetry(async () => {
-        // TODO: const [rows] = await this.pool.query('SHOW GRANTS');
-        // return rows;
-        return [] as any[];
+        const [rows] = await this.pool.query('SHOW GRANTS');
+        return rows as any[];
       }, 'getAccessPolicies');
 
       for (const grant of grants) {

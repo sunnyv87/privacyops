@@ -1,4 +1,10 @@
 import {
+  BlobServiceClient,
+  StorageSharedKeyCredential,
+  ContainerClient,
+} from '@azure/storage-blob';
+
+import {
   ConnectorConfig,
   ConnectionTestResult,
   DiscoveredAsset,
@@ -10,44 +16,64 @@ import {
 } from '../interfaces/connector.interface';
 import { BaseConnector } from '../sdk/base-connector';
 
-// TODO: import @azure/storage-blob when package is installed
-// import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
+/**
+ * Helper to consume a Node.js ReadableStream into a string.
+ */
+async function streamToString(
+  readable: NodeJS.ReadableStream | undefined,
+): Promise<string> {
+  if (!readable) return '';
+  const chunks: Buffer[] = [];
+  for await (const chunk of readable) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
+/**
+ * Parse a blob path like "azure://containerName/path/to/blob" into its parts.
+ */
+function parseBlobPath(assetExternalId: string): {
+  containerName: string;
+  blobName: string;
+} {
+  const stripped = assetExternalId.replace('azure://', '');
+  const slashIndex = stripped.indexOf('/');
+  if (slashIndex === -1) {
+    return { containerName: stripped, blobName: '' };
+  }
+  return {
+    containerName: stripped.substring(0, slashIndex),
+    blobName: stripped.substring(slashIndex + 1),
+  };
+}
 
 export class AzureBlobConnector extends BaseConnector {
-  private client: any; // TODO: type as BlobServiceClient once @azure/storage-blob is installed
+  private client: BlobServiceClient | null = null;
 
   protected async doInitialize(config: ConnectorConfig): Promise<void> {
-    const { connectionString, accountName, accountKey, sasToken } = config.credentials;
+    const { connectionString, accountName, accountKey } = config.credentials;
 
-    // TODO: Replace with actual BlobServiceClient creation
-    // if (connectionString) {
-    //   this.client = BlobServiceClient.fromConnectionString(connectionString);
-    // } else if (sasToken) {
-    //   this.client = new BlobServiceClient(
-    //     `https://${accountName}.blob.core.windows.net?${sasToken}`,
-    //   );
-    // } else {
-    //   this.client = new BlobServiceClient(
-    //     `https://${accountName}.blob.core.windows.net`,
-    //     new StorageSharedKeyCredential(accountName, accountKey),
-    //   );
-    // }
-
-    this.client = { accountName };
+    if (connectionString) {
+      this.client = BlobServiceClient.fromConnectionString(connectionString);
+    } else {
+      const credential = new StorageSharedKeyCredential(accountName, accountKey);
+      const url = `https://${accountName}.blob.core.windows.net`;
+      this.client = new BlobServiceClient(url, credential);
+    }
   }
 
   async testConnection(): Promise<ConnectionTestResult> {
     try {
-      const result = await this.withRetry(async () => {
-        // TODO: const properties = await this.client.getProperties();
-        // return properties;
-        return { accountKind: 'StorageV2' };
-      }, 'testConnection');
+      const properties = await this.withRetry(
+        () => this.client!.getProperties(),
+        'testConnection',
+      );
 
       return {
         success: true,
         message: 'Connected successfully',
-        metadata: { accountKind: result.accountKind },
+        metadata: { accountKind: (properties as any).accountKind },
       };
     } catch (error: any) {
       return {
@@ -58,18 +84,17 @@ export class AzureBlobConnector extends BaseConnector {
   }
 
   async disconnect(): Promise<void> {
-    // BlobServiceClient doesn't require explicit disconnect
+    // HTTP-based client — no persistent connection to tear down.
+    this.client = null;
   }
 
   async *listAssets(): AsyncGenerator<DiscoveredAsset> {
-    // List containers
     const containers = await this.withRetry(async () => {
-      // TODO: const containerList: any[] = [];
-      // for await (const container of this.client.listContainers()) {
-      //   containerList.push(container);
-      // }
-      // return containerList;
-      return [] as any[];
+      const list: any[] = [];
+      for await (const container of this.client!.listContainers()) {
+        list.push(container);
+      }
+      return list;
     }, 'listContainers');
 
     for (const container of containers) {
@@ -84,69 +109,73 @@ export class AzureBlobConnector extends BaseConnector {
         },
       };
 
-      // List blobs in container (top-level prefixes)
+      const containerClient: ContainerClient =
+        this.client!.getContainerClient(container.name);
+
       try {
         const blobs = await this.withRetry(async () => {
-          // TODO: const blobList: any[] = [];
-          // const containerClient = this.client.getContainerClient(container.name);
-          // for await (const blob of containerClient.listBlobsByHierarchy('/', { maxPageSize: 1000 })) {
-          //   blobList.push(blob);
-          //   if (blobList.length >= 1000) break;
-          // }
-          // return blobList;
-          return [] as any[];
+          const blobList: any[] = [];
+          for await (const blob of containerClient.listBlobsFlat()) {
+            blobList.push(blob);
+          }
+          return blobList;
         }, 'listBlobs');
 
         for (const blob of blobs) {
-          if (blob.kind === 'prefix') {
-            yield {
-              externalId: `azure://${container.name}/${blob.name}`,
-              name: blob.name.replace(/\/$/, ''),
-              type: 'container',
-              path: `azure://${container.name}/${blob.name}`,
-              parentExternalId: `azure://${container.name}`,
-              metadata: {},
-            };
-          } else {
-            yield {
-              externalId: `azure://${container.name}/${blob.name}`,
-              name: blob.name,
-              type: 'file',
-              path: `azure://${container.name}/${blob.name}`,
-              parentExternalId: `azure://${container.name}`,
-              metadata: {
-                contentType: blob.properties?.contentType,
-                lastModified: blob.properties?.lastModified?.toISOString(),
-              },
-              sizeBytes: blob.properties?.contentLength,
-            };
-          }
+          yield {
+            externalId: `azure://${container.name}/${blob.name}`,
+            name: blob.name,
+            type: 'file',
+            path: `azure://${container.name}/${blob.name}`,
+            parentExternalId: container.name,
+            metadata: {
+              contentType: blob.properties?.contentType,
+              lastModified: blob.properties?.lastModified?.toISOString(),
+            },
+            sizeBytes: blob.properties?.contentLength,
+          };
         }
       } catch (error: any) {
-        console.warn(`Error listing blobs in ${container.name}: ${error.message}`);
+        console.warn(
+          `Error listing blobs in ${container.name}: ${error.message}`,
+        );
       }
     }
   }
 
   async getAssetSchema(assetExternalId: string): Promise<AssetSchema> {
-    // For structured files (CSV), parse headers from first line
+    const { containerName, blobName } = parseBlobPath(assetExternalId);
+
+    // No blob name means this is a container — no schema to infer.
+    if (!blobName) {
+      return { fields: [] };
+    }
+
+    const isCsv =
+      blobName.toLowerCase().endsWith('.csv') ||
+      blobName.toLowerCase().endsWith('.tsv');
+
+    if (!isCsv) {
+      // Unstructured blob — cannot infer schema.
+      return { fields: [] };
+    }
+
     try {
-      const content = await this.withRetry(async () => {
-        // TODO: Parse the blob path and download first chunk
-        // const parts = assetExternalId.replace('azure://', '').split('/');
-        // const containerName = parts[0];
-        // const blobName = parts.slice(1).join('/');
-        // const containerClient = this.client.getContainerClient(containerName);
-        // const blobClient = containerClient.getBlobClient(blobName);
-        // const downloaded = await blobClient.download(0, 4096);
-        // const body = await streamToString(downloaded.readableStreamBody);
-        // return body;
-        return '';
+      const headerLine = await this.withRetry(async () => {
+        const containerClient = this.client!.getContainerClient(containerName);
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+        const response = await blockBlobClient.download(0, 4096);
+        const body = await streamToString(response.readableStreamBody);
+        return body.split('\n')[0];
       }, 'getAssetSchema');
 
-      if (content) {
-        const firstLine = content.split('\n')[0];
-        const headers = firstLine.split(',').map((h: string) => h.trim().replace(/"/g, ''));
+      if (headerLine) {
+        const delimiter = assetExternalId.toLowerCase().endsWith('.tsv')
+          ? '\t'
+          : ',';
+        const headers = headerLine
+          .split(delimiter)
+          .map((h: string) => h.trim().replace(/"/g, ''));
 
         return {
           fields: headers.map((name: string, idx: number) => ({
@@ -159,7 +188,7 @@ export class AzureBlobConnector extends BaseConnector {
         };
       }
     } catch {
-      // Schema inference not available for this blob type
+      // Schema inference not available for this blob.
     }
 
     return { fields: [] };
@@ -169,33 +198,109 @@ export class AzureBlobConnector extends BaseConnector {
     assetExternalId: string,
     options: SampleOptions,
   ): AsyncGenerator<ContentSample> {
-    // For Azure Blob, we'd download and parse files to extract content samples
-    // Similar approach to S3 sampling:
-    // 1. Download first chunk of the blob
-    // 2. Parse based on content type (CSV, JSON, Parquet, etc.)
-    // 3. Yield content samples per field
+    const { containerName, blobName } = parseBlobPath(assetExternalId);
+
+    if (!blobName) {
+      return;
+    }
+
+    const isCsv =
+      blobName.toLowerCase().endsWith('.csv') ||
+      blobName.toLowerCase().endsWith('.tsv');
+
+    // Estimate bytes to download: ~256 bytes per row is a reasonable heuristic.
+    const downloadBytes = Math.min(options.maxRows * 256, 1024 * 1024);
+
+    const rawContent = await this.withRetry(async () => {
+      const containerClient = this.client!.getContainerClient(containerName);
+      const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+      const response = await blockBlobClient.download(0, downloadBytes);
+      return streamToString(response.readableStreamBody);
+    }, 'sampleContent');
+
+    if (!rawContent) {
+      return;
+    }
+
+    if (isCsv) {
+      const delimiter = blobName.toLowerCase().endsWith('.tsv') ? '\t' : ',';
+      const lines = rawContent.split('\n').filter((l) => l.trim().length > 0);
+
+      if (lines.length < 2) {
+        return;
+      }
+
+      const headers = lines[0]
+        .split(delimiter)
+        .map((h) => h.trim().replace(/"/g, ''));
+      const dataLines = lines.slice(1, options.maxRows + 1);
+
+      const columnsToSample = headers.slice(0, options.maxColumns);
+
+      for (let colIdx = 0; colIdx < columnsToSample.length; colIdx++) {
+        const fieldName = columnsToSample[colIdx];
+        const values = dataLines.map((line) => {
+          const cells = line.split(delimiter);
+          return cells[colIdx]?.trim().replace(/"/g, '') ?? null;
+        });
+
+        yield {
+          assetExternalId,
+          fieldName,
+          values,
+          totalSampled: values.length,
+        };
+      }
+    } else {
+      // For non-CSV blobs, yield the raw content as a single sample.
+      yield {
+        assetExternalId,
+        fieldName: '_raw',
+        values: [rawContent],
+        totalSampled: 1,
+      };
+    }
   }
 
   async getAccessPolicies(
     assetExternalId: string,
   ): Promise<AccessPolicy[]> {
     const policies: AccessPolicy[] = [];
+    const { containerName } = parseBlobPath(assetExternalId);
 
     try {
-      // TODO: Check container access level
-      // const parts = assetExternalId.replace('azure://', '').split('/');
-      // const containerName = parts[0];
-      // const containerClient = this.client.getContainerClient(containerName);
-      // const accessPolicy = await containerClient.getAccessPolicy();
-      //
-      // if (accessPolicy.blobPublicAccess) {
-      //   policies.push({
-      //     principal: '*',
-      //     principalType: 'public',
-      //     permissions: [accessPolicy.blobPublicAccess],
-      //     source: 'container_access_level',
-      //   });
-      // }
+      const accessPolicy = await this.withRetry(async () => {
+        const containerClient =
+          this.client!.getContainerClient(containerName);
+        return containerClient.getAccessPolicy();
+      }, 'getAccessPolicies');
+
+      if (accessPolicy.blobPublicAccess) {
+        policies.push({
+          principal: '*',
+          principalType: 'public',
+          permissions: [accessPolicy.blobPublicAccess],
+          source: 'container_access_level',
+        });
+      } else {
+        policies.push({
+          principal: 'account_owner',
+          principalType: 'role',
+          permissions: ['private'],
+          source: 'container_access_level',
+        });
+      }
+
+      if (accessPolicy.signedIdentifiers) {
+        for (const identifier of accessPolicy.signedIdentifiers) {
+          policies.push({
+            principal: identifier.id,
+            principalType: 'role',
+            permissions: [identifier.accessPolicy?.permissions ?? 'unknown'],
+            source: 'stored_access_policy',
+          });
+        }
+      }
     } catch (error: any) {
       console.warn(`Error fetching access policies: ${error.message}`);
     }
@@ -207,8 +312,9 @@ export class AzureBlobConnector extends BaseConnector {
     return {
       type: 'azure_blob',
       displayName: 'Azure Blob Storage',
-      description: 'Connect to Azure Blob Storage for data discovery and classification',
-      authMethods: ['connection_string', 'sas_token', 'access_key'],
+      description:
+        'Connect to Azure Blob Storage for data discovery and classification',
+      authMethods: ['connection_string', 'access_key'],
       requiredPermissions: [
         'Storage Blob Data Reader',
         'Storage Account Contributor (for access policy analysis)',

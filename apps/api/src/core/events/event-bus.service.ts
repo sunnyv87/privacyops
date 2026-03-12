@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { connect, NatsConnection, JSONCodec, JetStreamManager, JetStreamClient } from 'nats';
 
@@ -10,11 +10,16 @@ export interface PlatformEvent {
   correlationId?: string;
 }
 
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = [1000, 2000, 4000];
+
 @Injectable()
 export class EventBusService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(EventBusService.name);
   private connection: NatsConnection | null = null;
   private js: JetStreamClient | null = null;
   private codec = JSONCodec();
+  private eventCounts = new Map<string, { success: number; failure: number }>();
 
   constructor(private readonly config: ConfigService) {}
 
@@ -39,10 +44,23 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
         // Stream may already exist
       }
 
+      // Create DLQ stream for failed events
+      try {
+        await jsm.streams.add({
+          name: 'PRIVACYOPS_DLQ',
+          subjects: ['privacyops-dlq.>'],
+          retention: 'limits' as any,
+          max_msgs: 100000,
+          max_age: 30 * 24 * 60 * 60 * 1000000000, // 30 days in nanoseconds
+        });
+      } catch {
+        // DLQ stream may already exist
+      }
+
       this.js = this.connection.jetstream();
-      console.log('NATS connected');
+      this.logger.log('NATS connected with DLQ support');
     } catch (error) {
-      console.warn('NATS connection failed, events will be logged only:', error);
+      this.logger.warn(`NATS connection failed, events will be logged only: ${error}`);
     }
   }
 
@@ -60,7 +78,7 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     if (this.js) {
       await this.js.publish(subject, this.codec.encode(payload));
     } else {
-      console.log(`[Event] ${subject}:`, JSON.stringify(payload));
+      this.logger.log(`[Event] ${subject}: ${JSON.stringify(payload)}`);
     }
   }
 
@@ -70,7 +88,7 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     handler: (event: PlatformEvent) => Promise<void>,
   ): Promise<void> {
     if (!this.js) {
-      console.warn(`Cannot subscribe to ${subject}: NATS not connected`);
+      this.logger.warn(`Cannot subscribe to ${subject}: NATS not connected`);
       return;
     }
 
@@ -80,15 +98,76 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
 
     (async () => {
       for await (const msg of sub) {
+        let event: PlatformEvent | undefined;
         try {
-          const event = this.codec.decode(msg.data) as PlatformEvent;
-          await handler(event);
+          event = this.codec.decode(msg.data) as PlatformEvent;
+          await this.executeWithRetry(subject, handler, event);
           msg.ack();
+          this.recordMetric(subject, true);
         } catch (error) {
-          console.error(`Error processing event on ${subject}:`, error);
-          msg.nak();
+          this.logger.error(`All retries exhausted for ${subject}: ${error}`);
+          msg.ack(); // Ack to prevent infinite redelivery
+          this.recordMetric(subject, false);
+          // Publish to DLQ
+          if (event) {
+            await this.publishToDlq(subject, event, error);
+          }
         }
       }
     })();
+  }
+
+  private async executeWithRetry(
+    subject: string,
+    handler: (event: PlatformEvent) => Promise<void>,
+    event: PlatformEvent,
+  ): Promise<void> {
+    for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+      try {
+        await handler(event);
+        return;
+      } catch (error) {
+        if (attempt === MAX_RETRY_ATTEMPTS) throw error;
+        const backoff = RETRY_BACKOFF_MS[attempt] ?? 4000;
+        this.logger.warn(
+          `Retry ${attempt + 1}/${MAX_RETRY_ATTEMPTS} for ${subject} in ${backoff}ms`,
+        );
+        await new Promise((r) => setTimeout(r, backoff));
+      }
+    }
+  }
+
+  private async publishToDlq(
+    subject: string,
+    event: PlatformEvent,
+    error: unknown,
+  ): Promise<void> {
+    if (!this.js) return;
+    try {
+      const dlqPayload = {
+        originalSubject: subject,
+        event,
+        error: error instanceof Error ? error.message : String(error),
+        failedAt: new Date().toISOString(),
+      };
+      await this.js.publish(
+        `privacyops-dlq.${event.type}`,
+        this.codec.encode(dlqPayload),
+      );
+      this.logger.warn(`Event sent to DLQ: ${event.type}`);
+    } catch (dlqError) {
+      this.logger.error(`Failed to publish to DLQ: ${dlqError}`);
+    }
+  }
+
+  private recordMetric(subject: string, success: boolean) {
+    const counts = this.eventCounts.get(subject) ?? { success: 0, failure: 0 };
+    if (success) counts.success++;
+    else counts.failure++;
+    this.eventCounts.set(subject, counts);
+  }
+
+  getMetrics(): Record<string, { success: number; failure: number }> {
+    return Object.fromEntries(this.eventCounts);
   }
 }

@@ -11,6 +11,8 @@ import { MongodbConnector } from './implementations/mongodb.connector';
 import { AzureBlobConnector } from './implementations/azure-blob.connector';
 import { GcpStorageConnector } from './implementations/gcp-storage.connector';
 import { SnowflakeConnector } from './implementations/snowflake.connector';
+import { MssqlConnector } from './implementations/mssql.connector';
+import { BigQueryConnector } from './implementations/bigquery.connector';
 
 @Injectable()
 export class ConnectorRegistry {
@@ -25,6 +27,8 @@ export class ConnectorRegistry {
     this.register('azure_blob', () => new AzureBlobConnector());
     this.register('gcp_storage', () => new GcpStorageConnector());
     this.register('snowflake', () => new SnowflakeConnector());
+    this.register('sqlserver', () => new MssqlConnector());
+    this.register('bigquery', () => new BigQueryConnector());
   }
 
   register(type: DataSourceType, factory: () => IConnector): void {

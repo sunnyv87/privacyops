@@ -101,57 +101,77 @@ export class DiscoveryService {
       });
 
       let assetsDiscovered = 0;
-      try {
-      for await (const asset of connector.listAssets()) {
-        const dbAsset = await this.prisma.asset.upsert({
-          where: {
-            tenantId_dataSourceId_externalId: {
-              tenantId: scanJob.tenantId,
-              dataSourceId: scanJob.dataSourceId,
-              externalId: asset.externalId,
-            },
-          },
-          create: {
-            tenantId: scanJob.tenantId,
-            dataSourceId: scanJob.dataSourceId,
-            externalId: asset.externalId,
-            name: asset.name,
-            type: asset.type,
-            path: asset.path,
-            sizeBytes: asset.sizeBytes,
-            rowCountEstimate: asset.rowCountEstimate,
-            metadata: asset.metadata || {},
-          },
-          update: {
-            name: asset.name,
-            sizeBytes: asset.sizeBytes,
-            rowCountEstimate: asset.rowCountEstimate,
-            metadata: asset.metadata || {},
-            lastScannedAt: new Date(),
-          },
-        });
+      const BATCH_SIZE = 100;
+      let batch: any[] = [];
 
-        if (asset.fields) {
-          for (const field of asset.fields) {
-            await this.prisma.assetField.upsert({
+      const flushBatch = async (items: any[]) => {
+        if (items.length === 0) return;
+
+        // Batch upsert assets and fields within a single transaction
+        await this.prisma.$transaction(async (tx: any) => {
+          for (const asset of items) {
+            const dbAsset = await tx.asset.upsert({
               where: {
-                assetId_name: { assetId: dbAsset.id, name: field.name },
+                tenantId_dataSourceId_externalId: {
+                  tenantId: scanJob.tenantId,
+                  dataSourceId: scanJob.dataSourceId,
+                  externalId: asset.externalId,
+                },
               },
               create: {
                 tenantId: scanJob.tenantId,
-                assetId: dbAsset.id,
-                name: field.name,
-                dataType: field.dataType,
-                ordinalPosition: field.ordinalPosition,
-                nullable: field.nullable ?? true,
+                dataSourceId: scanJob.dataSourceId,
+                externalId: asset.externalId,
+                name: asset.name,
+                type: asset.type,
+                path: asset.path,
+                sizeBytes: asset.sizeBytes,
+                rowCountEstimate: asset.rowCountEstimate,
+                metadata: asset.metadata || {},
               },
-              update: { dataType: field.dataType },
+              update: {
+                name: asset.name,
+                sizeBytes: asset.sizeBytes,
+                rowCountEstimate: asset.rowCountEstimate,
+                metadata: asset.metadata || {},
+                lastScannedAt: new Date(),
+              },
             });
-          }
-        }
 
+            if (asset.fields && asset.fields.length > 0) {
+              for (const field of asset.fields) {
+                await tx.assetField.upsert({
+                  where: {
+                    assetId_name: { assetId: dbAsset.id, name: field.name },
+                  },
+                  create: {
+                    tenantId: scanJob.tenantId,
+                    assetId: dbAsset.id,
+                    name: field.name,
+                    dataType: field.dataType,
+                    ordinalPosition: field.ordinalPosition,
+                    nullable: field.nullable ?? true,
+                  },
+                  update: { dataType: field.dataType },
+                });
+              }
+            }
+          }
+        });
+      };
+
+      try {
+      for await (const asset of connector.listAssets()) {
+        batch.push(asset);
         assetsDiscovered++;
+
+        if (batch.length >= BATCH_SIZE) {
+          await flushBatch(batch);
+          batch = [];
+        }
       }
+      // Flush remaining
+      await flushBatch(batch);
       } finally {
         await connector.disconnect();
       }

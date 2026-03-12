@@ -13,6 +13,23 @@ interface ScanInput {
   dataSourceId: string;
 }
 
+const CONCURRENCY_LIMIT = 10;
+
+/**
+ * Processes items in parallel with a concurrency limit.
+ * Prevents overwhelming the database while still parallelizing work.
+ */
+async function parallelBatch<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
+    await Promise.all(chunk.map(fn));
+  }
+}
+
 export async function scanWorkflow(input: ScanInput): Promise<{
   assetsDiscovered: number;
   assetsClassified: number;
@@ -20,15 +37,14 @@ export async function scanWorkflow(input: ScanInput): Promise<{
   // Step 1: Discover assets from the data source
   const discoveredAssets = await discoverAssets(input);
 
-  // Step 2: Classify each discovered asset
+  // Step 2+3: Classify and score assets in parallel batches
   let assetsClassified = 0;
-  for (const assetId of discoveredAssets) {
-    await classifyAsset({ tenantId: input.tenantId, assetId });
-    assetsClassified++;
 
-    // Step 3: Calculate risk score for the asset
+  await parallelBatch(discoveredAssets, CONCURRENCY_LIMIT, async (assetId: string) => {
+    await classifyAsset({ tenantId: input.tenantId, assetId });
     await calculateRiskScore({ tenantId: input.tenantId, assetId });
-  }
+    assetsClassified++;
+  });
 
   // Step 4: Send completion notification
   await notifyScanComplete({

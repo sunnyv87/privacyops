@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { RiskScorer, RiskScoringInput } from './engine/risk-scorer';
 import { FindingFilterDto, UpdateFindingStatusDto } from './dto/dspm.dto';
+import Redis from 'ioredis';
+
+const RISK_CACHE_TTL_SECONDS = 3600; // 1 hour
 
 @Injectable()
 export class DspmService {
@@ -14,6 +17,7 @@ export class DspmService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly events: EventBusService,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
 
   async findAllFindings(
@@ -457,6 +461,14 @@ export class DspmService {
       timestamp: new Date(),
     });
 
+    // Cache the computed risk profile
+    const cacheKey = `risk_profile:${tenantId}:${entityType}:${entityId}`;
+    try {
+      await this.redis.setex(cacheKey, RISK_CACHE_TTL_SECONDS, JSON.stringify(profile));
+    } catch {
+      // Non-fatal: continue without caching
+    }
+
     return profile;
   }
 
@@ -535,16 +547,25 @@ export class DspmService {
 
     let processed = 0;
     let failed = 0;
+    const CONCURRENCY = 10;
 
-    for (const asset of assets) {
-      try {
-        await this.calculateEntityRisk(tenantId, asset.type, asset.id);
-        processed++;
-      } catch (error) {
-        this.logger.warn(
-          `Failed to recalculate risk for asset ${asset.id}: ${error.message}`,
-        );
-        failed++;
+    // Process in parallel batches with concurrency limit
+    for (let i = 0; i < assets.length; i += CONCURRENCY) {
+      const chunk = assets.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        chunk.map((asset) =>
+          this.calculateEntityRisk(tenantId, asset.type, asset.id),
+        ),
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          processed++;
+        } else {
+          this.logger.warn(
+            `Failed to recalculate risk for asset: ${result.reason?.message}`,
+          );
+          failed++;
+        }
       }
     }
 

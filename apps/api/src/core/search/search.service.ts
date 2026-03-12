@@ -1,9 +1,10 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@opensearch-project/opensearch';
 
 @Injectable()
 export class SearchService implements OnModuleInit {
+  private readonly logger = new Logger(SearchService.name);
   private client: Client;
 
   constructor(private readonly config: ConfigService) {
@@ -15,9 +16,9 @@ export class SearchService implements OnModuleInit {
   async onModuleInit() {
     try {
       const info = await this.client.info();
-      console.log('OpenSearch connected:', info.body.version.number);
+      this.logger.log(`OpenSearch connected: ${info.body.version.number}`);
     } catch (error) {
-      console.warn('OpenSearch connection failed:', error);
+      this.logger.warn('OpenSearch connection failed:', error);
     }
   }
 
@@ -26,8 +27,48 @@ export class SearchService implements OnModuleInit {
       index: indexName,
       id,
       body: document,
-      refresh: true,
+      refresh: false,
     });
+  }
+
+  /**
+   * Bulk index multiple documents in a single request.
+   * Significantly faster than individual index() calls for batch operations.
+   */
+  async bulkIndex(
+    indexName: string,
+    documents: { id: string; body: any }[],
+  ): Promise<{ indexed: number; errors: number }> {
+    if (documents.length === 0) return { indexed: 0, errors: 0 };
+
+    const bulkBody = documents.flatMap((doc) => [
+      { index: { _index: indexName, _id: doc.id } },
+      doc.body,
+    ]);
+
+    const result = await this.client.bulk({ body: bulkBody, refresh: false });
+
+    let errors = 0;
+    if (result.body.errors) {
+      for (const item of result.body.items) {
+        if (item.index?.error) {
+          this.logger.warn(
+            `Bulk index error for ${item.index._id}: ${item.index.error.reason}`,
+          );
+          errors++;
+        }
+      }
+    }
+
+    return { indexed: documents.length - errors, errors };
+  }
+
+  /**
+   * Explicitly refresh an index to make recent writes searchable.
+   * Call this after bulk operations instead of refreshing per-document.
+   */
+  async refresh(indexName: string): Promise<void> {
+    await this.client.indices.refresh({ index: indexName });
   }
 
   async search(

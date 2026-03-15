@@ -9,7 +9,9 @@ const {
   notifyInternalTeam,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: '15 minutes',
-  retry: { maximumAttempts: 3 },
+  scheduleToCloseTimeout: '1 hour',
+  heartbeatTimeout: '5 minutes',
+  retry: { maximumAttempts: 3, backoffCoefficient: 2 },
 });
 
 interface BreachInput {

@@ -5,6 +5,7 @@ initTracing();
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { StructuredLogger } from './core/telemetry/structured-logger.service';
@@ -35,6 +36,10 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: new StructuredLogger(),
   });
+
+  // Request size limits — reject oversized payloads before they reach handlers
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   // Security
   app.use(helmet());
@@ -86,7 +91,11 @@ async function bootstrap() {
   }
 
   const port = process.env.PORT || 4000;
-  await app.listen(port);
+  const server = await app.listen(port);
+
+  // Server-level socket timeout — kill connections that hang beyond 120s
+  server.setTimeout(120_000);
+
   logger.log(`PrivacyOps API running on port ${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
 

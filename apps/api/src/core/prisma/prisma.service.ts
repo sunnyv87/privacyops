@@ -1,13 +1,48 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+
+const SLOW_QUERY_THRESHOLD_MS = 500;
 
 @Injectable()
 export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new Logger(PrismaService.name);
+
+  constructor() {
+    super({
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL,
+        },
+      },
+      log: [
+        { emit: 'event', level: 'query' },
+        { emit: 'event', level: 'warn' },
+        { emit: 'event', level: 'error' },
+      ],
+    });
+  }
+
   async onModuleInit() {
+    // Slow query logging
+    (this as any).$on('query', (e: any) => {
+      const duration = e.duration ?? 0;
+      if (duration > SLOW_QUERY_THRESHOLD_MS) {
+        this.logger.warn(
+          `Slow query (${duration}ms): ${String(e.query).slice(0, 200)}`,
+        );
+      }
+    });
+
+    // Set statement timeout at the database session level (30s)
     await this.$connect();
+    try {
+      await this.$executeRawUnsafe(`SET statement_timeout = '30s'`);
+    } catch {
+      this.logger.warn('Could not set statement_timeout (may not be PostgreSQL)');
+    }
   }
 
   async onModuleDestroy() {

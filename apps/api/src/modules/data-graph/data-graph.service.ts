@@ -110,22 +110,27 @@ export class DataGraphService {
     };
   }
 
-  async getNeighbors(tenantId: string, nodeId: string, depth = 1) {
+  async getNeighbors(tenantId: string, nodeId: string, depth = 1, limit = 200) {
     // Verify node exists
     const node = await this.prisma.dataGraphNode.findFirst({
       where: { id: nodeId, tenantId },
     });
     if (!node) throw new NotFoundException(`Graph node ${nodeId} not found`);
 
-    // Get 1-hop neighbors via outgoing and incoming edges
+    // Cap the neighbor limit to prevent memory exhaustion
+    const edgeLimit = Math.min(limit, 500);
+
+    // Get 1-hop neighbors via outgoing and incoming edges (with limits)
     const [outgoing, incoming] = await Promise.all([
       this.prisma.dataGraphEdge.findMany({
         where: { tenantId, sourceNodeId: nodeId },
         include: { targetNode: true },
+        take: edgeLimit,
       }),
       this.prisma.dataGraphEdge.findMany({
         where: { tenantId, targetNodeId: nodeId },
         include: { sourceNode: true },
+        take: edgeLimit,
       }),
     ]);
 
@@ -167,12 +172,20 @@ export class DataGraphService {
     if (!fromNode) throw new NotFoundException(`Source node ${fromNodeId} not found`);
     if (!toNode) throw new NotFoundException(`Target node ${toNodeId} not found`);
 
-    // Preload all edges for the tenant into an in-memory adjacency list.
-    // This replaces the N+1 per-node query pattern with 1 bulk query.
+    // Preload edges for the tenant into an in-memory adjacency list.
+    // Capped at 50k edges to prevent OOM on very large tenants.
+    const MAX_EDGES = 50_000;
     const allEdges = await this.prisma.dataGraphEdge.findMany({
       where: { tenantId },
       select: { id: true, sourceNodeId: true, targetNodeId: true, relationshipType: true },
+      take: MAX_EDGES,
     });
+
+    if (allEdges.length >= MAX_EDGES) {
+      this.logger.warn(
+        `findPaths: tenant ${tenantId} has ${MAX_EDGES}+ edges, results may be incomplete`,
+      );
+    }
 
     const adjacency = new Map<string, { nodeId: string; edgeId: string; relationshipType: string }[]>();
     for (const edge of allEdges) {
@@ -192,6 +205,8 @@ export class DataGraphService {
     }
 
     // BFS path finding on in-memory adjacency list
+    const MAX_PATHS = 20;
+    const MAX_VISITED = 10_000;
     const visited = new Set<string>();
     const queue: { nodeId: string; path: { nodeId: string; edgeId: string; relationshipType: string }[] }[] = [
       { nodeId: fromNodeId, path: [] },
@@ -200,7 +215,7 @@ export class DataGraphService {
 
     const paths: { nodeId: string; edgeId: string; relationshipType: string }[][] = [];
 
-    while (queue.length > 0) {
+    while (queue.length > 0 && paths.length < MAX_PATHS) {
       const current = queue.shift()!;
 
       if (current.path.length >= maxDepth) continue;
@@ -208,6 +223,8 @@ export class DataGraphService {
       const neighbors = adjacency.get(current.nodeId) ?? [];
 
       for (const neighbor of neighbors) {
+        if (paths.length >= MAX_PATHS) break;
+
         const newPath = [...current.path, neighbor];
 
         if (neighbor.nodeId === toNodeId) {
@@ -215,7 +232,7 @@ export class DataGraphService {
           continue;
         }
 
-        if (!visited.has(neighbor.nodeId)) {
+        if (!visited.has(neighbor.nodeId) && visited.size < MAX_VISITED) {
           visited.add(neighbor.nodeId);
           queue.push({ nodeId: neighbor.nodeId, path: newPath });
         }
@@ -236,8 +253,9 @@ export class DataGraphService {
       );
     }
 
-    // BFS up to 3 hops
+    // BFS up to 3 hops with per-hop edge limit
     const maxHops = 3;
+    const MAX_SUBGRAPH_EDGES_PER_HOP = 500;
     const visitedNodeIds = new Set<string>([rootNode.id]);
     const allNodes: any[] = [rootNode];
     const allEdges: any[] = [];
@@ -253,6 +271,7 @@ export class DataGraphService {
           ],
         },
         include: { sourceNode: true, targetNode: true },
+        take: MAX_SUBGRAPH_EDGES_PER_HOP,
       });
 
       const nextFrontier: string[] = [];

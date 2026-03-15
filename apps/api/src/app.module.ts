@@ -24,6 +24,7 @@ import { CsrfGuard } from './core/security/csrf.guard';
 // Interceptors
 import { FieldMaskInterceptor } from './core/auth/interceptors/field-mask.interceptor';
 import { MetricsInterceptor } from './modules/observability/metrics.interceptor';
+import { TimeoutInterceptor } from './core/telemetry/timeout.interceptor';
 
 // Telemetry
 import { TelemetryModule } from './core/telemetry/telemetry.module';
@@ -128,6 +129,7 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     // Global interceptors
+    { provide: APP_INTERCEPTOR, useClass: TimeoutInterceptor },
     { provide: APP_INTERCEPTOR, useClass: FieldMaskInterceptor },
     { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
     // Global exception filter

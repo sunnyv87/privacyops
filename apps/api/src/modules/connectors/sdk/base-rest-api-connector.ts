@@ -88,7 +88,9 @@ export abstract class BaseRestApiConnector extends BaseConnector {
 
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
-        throw new Error(`${method} ${path} failed (${resp.status}): ${text.slice(0, 200)}`);
+        const retryAfter = resp.headers.get('retry-after') || '';
+        const retryInfo = retryAfter ? ` Retry-After: ${retryAfter}` : '';
+        throw new Error(`${method} ${path} failed (${resp.status}): ${text.slice(0, 200)}${retryInfo}`);
       }
 
       const contentType = resp.headers.get('content-type') || '';

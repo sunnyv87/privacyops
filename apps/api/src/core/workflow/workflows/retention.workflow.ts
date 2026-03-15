@@ -4,7 +4,9 @@ import type * as activities from '../activities/retention.activities';
 const { findExpiredAssets, executeDisposal, logDisposal } =
   proxyActivities<typeof activities>({
     startToCloseTimeout: '60 minutes',
-    retry: { maximumAttempts: 2 },
+    scheduleToCloseTimeout: '3 hours',
+    heartbeatTimeout: '10 minutes',
+    retry: { maximumAttempts: 2, backoffCoefficient: 2 },
   });
 
 interface RetentionInput {

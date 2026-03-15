@@ -58,12 +58,38 @@ export abstract class BaseConnector implements IConnector {
       } catch (err) {
         lastError = err as Error;
         if (attempt < this.retryConfig.maxRetries) {
-          const delay = this.retryConfig.backoffMs * Math.pow(this.retryConfig.backoffMultiplier, attempt);
-          await new Promise(r => setTimeout(r, delay));
+          // Check for Retry-After header on HTTP 429/503 responses
+          const retryAfterMs = this.extractRetryAfterMs(err);
+          if (retryAfterMs > 0) {
+            await new Promise(r => setTimeout(r, retryAfterMs));
+          } else {
+            // Exponential backoff with jitter to prevent thundering herd
+            const base = this.retryConfig.backoffMs * Math.pow(this.retryConfig.backoffMultiplier, attempt);
+            const jitter = base * 0.5 * Math.random();
+            await new Promise(r => setTimeout(r, base + jitter));
+          }
         }
       }
     }
     throw new Error(`${context} failed after ${this.retryConfig.maxRetries + 1} attempts: ${lastError!.message}`);
+  }
+
+  /**
+   * Extract Retry-After delay from an error thrown by fetch for 429/503 responses.
+   * Returns milliseconds to wait, or 0 if not applicable.
+   */
+  private extractRetryAfterMs(err: unknown): number {
+    if (!(err instanceof Error)) return 0;
+    // Match "failed (429)" or "failed (503)" patterns from BaseRestApiConnector
+    const statusMatch = err.message.match(/failed \((429|503)\)/);
+    if (!statusMatch) return 0;
+    // Parse "Retry-After: N" from the error message body if present
+    const retryAfterMatch = err.message.match(/retry-after[:\s]+(\d+)/i);
+    if (retryAfterMatch) {
+      return parseInt(retryAfterMatch[1], 10) * 1000;
+    }
+    // Default backoff for 429/503 without Retry-After header
+    return 5000;
   }
 
   private async checkRateLimit(): Promise<void> {

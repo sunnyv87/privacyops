@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { WorkflowService } from './workflow.service';
@@ -23,6 +24,7 @@ export class ScheduledJobsService {
     private readonly events: EventBusService,
     private readonly notifications: NotificationsService,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   /**
@@ -319,5 +321,68 @@ export class ScheduledJobsService {
     }
 
     this.logger.log('Periodic access review completed');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Connector health checks — Every 10 minutes
+  // ---------------------------------------------------------------------------
+
+  @Cron('*/10 * * * *', { name: 'connector-health-check' })
+  async checkConnectorHealth() {
+    if (!(await this.acquireLock('connector-health-check', 540))) {
+      this.logger.debug('Connector health check skipped — another replica holds the lock');
+      return;
+    }
+
+    this.logger.log('Starting scheduled connector health check');
+
+    try {
+      const dataSources = await this.prisma.dataSource.findMany({
+        where: { deletedAt: null, status: 'active' },
+        select: { id: true, name: true, tenantId: true, lastScanAt: true, type: true },
+      });
+
+      const now = Date.now();
+
+      for (const ds of dataSources) {
+        // Check for stale connectors (no scan in 24h for active sources)
+        const lastScan = ds.lastScanAt ? new Date(ds.lastScanAt).getTime() : 0;
+        const staleness = now - lastScan;
+
+        if (staleness > 24 * 60 * 60 * 1000) {
+          // Log health degradation
+          try {
+            await this.prisma.connectorHealthLog.create({
+              data: {
+                tenantId: ds.tenantId,
+                dataSourceId: ds.id,
+                healthStatus: 'degraded',
+                details: { reason: 'no_recent_scan', lastScanAt: ds.lastScanAt, stalenessHours: Math.round(staleness / 3600000) },
+                checkedAt: new Date(),
+              },
+            });
+          } catch {
+            // ConnectorHealthLog table may not exist in all environments
+          }
+
+          await this.events.publish({
+            type: 'connector.health_degraded',
+            tenantId: ds.tenantId,
+            data: {
+              dataSourceId: ds.id,
+              connectorName: ds.name,
+              status: 'degraded',
+              reason: 'no_recent_scan',
+              lastScanAt: ds.lastScanAt,
+            },
+            timestamp: new Date(),
+          });
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`Connector health check failed: ${err.message}`);
+    }
+
+    this.logger.log('Connector health check completed');
   }
 }

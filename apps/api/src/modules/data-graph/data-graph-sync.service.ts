@@ -80,49 +80,53 @@ export class DataGraphSyncService {
     let nodesCreated = 0;
     let edgesCreated = 0;
 
-    for (const asset of assets) {
-      const node = await this.graphService.createNode(
-        tenantId,
-        'asset',
-        asset.id,
-        asset.name,
-        { type: asset.type },
+    // Batch asset node upserts in chunks to reduce N+1 overhead
+    const BATCH_SIZE = 50;
+    const assetNodeMap = new Map<string, string>();
+
+    for (let i = 0; i < assets.length; i += BATCH_SIZE) {
+      const batch = assets.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map((asset) =>
+          this.graphService.createNode(tenantId, 'asset', asset.id, asset.name, { type: asset.type }),
+        ),
       );
-      nodesCreated++;
-
-      // Create STORED_IN edge to data source node
-      const dsNodeId = dsNodeMap.get(asset.dataSourceId);
-      if (dsNodeId) {
-        await this.graphService.createEdge(
-          tenantId,
-          node.id,
-          dsNodeId,
-          'STORED_IN',
-        );
-        edgesCreated++;
+      for (let j = 0; j < batch.length; j++) {
+        assetNodeMap.set(batch[j].id, results[j].id);
+        nodesCreated++;
       }
+    }
 
-      // Create CONTAINS edges to child assets (parent -> child)
-      if (asset.parentAssetId) {
-        // Find or create parent node (it should already exist from iteration)
-        const parentAsset = assets.find((a) => a.id === asset.parentAssetId);
-        if (parentAsset) {
-          const parentNode = await this.graphService.createNode(
-            tenantId,
-            'asset',
-            parentAsset.id,
-            parentAsset.name,
-            { type: parentAsset.type },
+    // Create edges in batches
+    for (let i = 0; i < assets.length; i += BATCH_SIZE) {
+      const batch = assets.slice(i, i + BATCH_SIZE);
+      const edgeOps: Promise<any>[] = [];
+
+      for (const asset of batch) {
+        const nodeId = assetNodeMap.get(asset.id);
+        if (!nodeId) continue;
+
+        // STORED_IN edge to data source
+        const dsNodeId = dsNodeMap.get(asset.dataSourceId);
+        if (dsNodeId) {
+          edgeOps.push(
+            this.graphService.createEdge(tenantId, nodeId, dsNodeId, 'STORED_IN'),
           );
-          await this.graphService.createEdge(
-            tenantId,
-            parentNode.id,
-            node.id,
-            'CONTAINS',
-          );
-          edgesCreated++;
+        }
+
+        // CONTAINS edge from parent
+        if (asset.parentAssetId) {
+          const parentNodeId = assetNodeMap.get(asset.parentAssetId);
+          if (parentNodeId) {
+            edgeOps.push(
+              this.graphService.createEdge(tenantId, parentNodeId, nodeId, 'CONTAINS'),
+            );
+          }
         }
       }
+
+      const results = await Promise.all(edgeOps);
+      edgesCreated += results.length;
     }
 
     return { nodesCreated, edgesCreated };
@@ -193,15 +197,16 @@ export class DataGraphSyncService {
 
     let nodesCreated = 0;
 
-    for (const user of users) {
-      await this.graphService.createNode(
-        tenantId,
-        'identity',
-        user.id,
-        user.name,
-        { email: user.email },
+    // Batch user node creation
+    const BATCH = 50;
+    for (let i = 0; i < users.length; i += BATCH) {
+      const batch = users.slice(i, i + BATCH);
+      await Promise.all(
+        batch.map((user) =>
+          this.graphService.createNode(tenantId, 'identity', user.id, user.name, { email: user.email }),
+        ),
       );
-      nodesCreated++;
+      nodesCreated += batch.length;
     }
 
     return { nodesCreated, edgesCreated: 0 };

@@ -4,7 +4,9 @@ import type * as activities from '../activities/approval.activities';
 const { validateAssessment, assignReviewer, awaitReview, recordDecision, notifyOutcome } =
   proxyActivities<typeof activities>({
     startToCloseTimeout: '30 minutes',
-    retry: { maximumAttempts: 3 },
+    scheduleToCloseTimeout: '2 hours',
+    heartbeatTimeout: '5 minutes',
+    retry: { maximumAttempts: 3, backoffCoefficient: 2 },
   });
 
 interface DpiaApprovalInput {

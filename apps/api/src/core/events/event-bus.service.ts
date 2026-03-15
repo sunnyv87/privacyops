@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash, randomUUID } from 'crypto';
 import { connect, NatsConnection, JSONCodec, JetStreamManager, JetStreamClient } from 'nats';
 import { CorrelationIdMiddleware } from '@/core/telemetry/correlation-id.middleware';
 import { PrometheusService } from '@/core/telemetry/prometheus.service';
@@ -10,6 +11,7 @@ export interface PlatformEvent {
   data: any;
   timestamp: Date;
   correlationId?: string;
+  eventId?: string;
 }
 
 const MAX_RETRY_ATTEMPTS = 3;
@@ -22,6 +24,10 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
   private js: JetStreamClient | null = null;
   private codec = JSONCodec();
   private eventCounts = new Map<string, { success: number; failure: number }>();
+  /** In-memory idempotency cache: eventId -> timestamp. Entries expire after IDEMPOTENCY_TTL_MS. */
+  private processedEvents = new Map<string, number>();
+  private static readonly IDEMPOTENCY_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  private idempotencyCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   private prometheus: PrometheusService | null = null;
 
@@ -83,9 +89,18 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.warn(`NATS connection failed, events will be logged only: ${error}`);
     }
+
+    // Periodically purge expired idempotency entries
+    this.idempotencyCleanupTimer = setInterval(() => {
+      const cutoff = Date.now() - EventBusService.IDEMPOTENCY_TTL_MS;
+      for (const [id, ts] of this.processedEvents) {
+        if (ts < cutoff) this.processedEvents.delete(id);
+      }
+    }, 60_000);
   }
 
   async onModuleDestroy() {
+    if (this.idempotencyCleanupTimer) clearInterval(this.idempotencyCleanupTimer);
     await this.connection?.close();
   }
 
@@ -94,6 +109,11 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     if (!event.tenantId || typeof event.tenantId !== 'string' || event.tenantId.length === 0) {
       this.logger.error(`Refusing to publish event ${event.type}: missing or invalid tenantId`);
       return;
+    }
+
+    // Auto-assign a unique eventId for idempotency tracking
+    if (!event.eventId) {
+      event.eventId = randomUUID();
     }
 
     // Auto-populate correlationId from request context if not set
@@ -136,6 +156,12 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
         const eventStart = Date.now();
         try {
           event = this.codec.decode(msg.data) as PlatformEvent;
+          // Idempotency: skip duplicate events
+          if (this.isAlreadyProcessed(event)) {
+            this.logger.debug(`Skipping duplicate event ${event.eventId} for ${subject}`);
+            msg.ack();
+            continue;
+          }
           await this.executeWithRetry(subject, handler, event);
           msg.ack();
           this.recordMetric(subject, true);
@@ -156,6 +182,18 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
         }
       }
     })();
+  }
+
+  /**
+   * Check if an event has already been processed (idempotency guard).
+   * Returns true if the event is a duplicate and should be skipped.
+   */
+  isAlreadyProcessed(event: PlatformEvent): boolean {
+    const eventId = event.eventId;
+    if (!eventId) return false;
+    if (this.processedEvents.has(eventId)) return true;
+    this.processedEvents.set(eventId, Date.now());
+    return false;
   }
 
   private async executeWithRetry(

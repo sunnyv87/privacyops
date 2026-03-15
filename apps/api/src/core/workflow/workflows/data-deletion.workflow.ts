@@ -9,7 +9,9 @@ const {
   notifyDeletionComplete,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: '30 minutes',
-  retry: { maximumAttempts: 3 },
+  scheduleToCloseTimeout: '2 hours',
+  heartbeatTimeout: '5 minutes',
+  retry: { maximumAttempts: 3, backoffCoefficient: 2 },
 });
 
 interface DataDeletionInput {

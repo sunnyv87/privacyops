@@ -9,7 +9,9 @@ const {
   notifyOverdue,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: '10 minutes',
-  retry: { maximumAttempts: 3 },
+  scheduleToCloseTimeout: '1 hour',
+  heartbeatTimeout: '3 minutes',
+  retry: { maximumAttempts: 3, backoffCoefficient: 2 },
 });
 
 interface DsarInput {

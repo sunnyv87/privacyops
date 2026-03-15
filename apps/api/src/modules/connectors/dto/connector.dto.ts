@@ -27,6 +27,13 @@ export enum DataSourceTypeEnum {
   SLACK = 'slack',
   M365 = 'm365',
   GENERIC_REST = 'generic_rest',
+  REDSHIFT = 'redshift',
+  DATABRICKS = 'databricks',
+  SERVICENOW = 'servicenow',
+  OKTA = 'okta',
+  AZURE_AD = 'azure_ad',
+  TEAMS = 'teams',
+  SPLUNK = 'splunk',
 }
 
 export enum AuthMethodEnum {
@@ -36,6 +43,9 @@ export enum AuthMethodEnum {
   SERVICE_ACCOUNT = 'service_account',
   CONNECTION_STRING = 'connection_string',
   API_KEY = 'api_key',
+  PAT = 'pat',
+  BOT_TOKEN = 'bot_token',
+  BASIC_AUTH = 'basic_auth',
 }
 
 export class CreateConnectorDto {

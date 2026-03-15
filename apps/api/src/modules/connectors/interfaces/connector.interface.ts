@@ -95,7 +95,14 @@ export type DataSourceType =
   | 'github'
   | 'slack'
   | 'm365'
-  | 'generic_rest';
+  | 'generic_rest'
+  | 'redshift'
+  | 'databricks'
+  | 'servicenow'
+  | 'okta'
+  | 'azure_ad'
+  | 'teams'
+  | 'splunk';
 
 export type AssetType =
   | 'table'
@@ -108,7 +115,14 @@ export type AssetType =
   | 'channel'
   | 'repository'
   | 'database'
-  | 'schema';
+  | 'schema'
+  | 'user'
+  | 'group'
+  | 'team'
+  | 'index'
+  | 'site'
+  | 'list'
+  | 'drive';
 
 /**
  * The interface every connector must implement.

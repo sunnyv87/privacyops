@@ -157,6 +157,108 @@ export class AttackPathAnalyzer {
     return { pathsFound: paths.length, paths };
   }
 
+  /**
+   * Multi-hop attack path analysis — follows lineage chains up to maxDepth hops
+   * from exposed entry points to sensitive assets.
+   */
+  async analyzeMultiHopPaths(tenantId: string, maxDepth = 3) {
+    this.logger.log(`Analyzing multi-hop attack paths (depth=${maxDepth}) for tenant ${tenantId}`);
+    const paths: any[] = [];
+
+    const exposedMappings = await this.prisma.identityAccessMapping.findMany({
+      where: {
+        tenantId,
+        OR: [{ identityType: 'public' }, { isExcessive: true }],
+      },
+    });
+
+    const sensitiveAssets = await this.prisma.riskFinding.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        severity: { in: ['critical', 'high'] },
+        status: { in: ['open', 'acknowledged'] },
+      },
+      include: { asset: { select: { id: true, name: true, type: true } } },
+    });
+
+    const sensitiveAssetIds = new Set(sensitiveAssets.map((f) => f.assetId));
+    const entryAssetIds = new Set(exposedMappings.map((m) => m.assetId));
+
+    // BFS from each entry point
+    for (const mapping of exposedMappings) {
+      const visited = new Set<string>();
+      const queue: { assetId: string; depth: number; path: string[] }[] = [
+        { assetId: mapping.assetId, depth: 0, path: [mapping.assetId] },
+      ];
+
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (visited.has(current.assetId) || current.depth > maxDepth) continue;
+        visited.add(current.assetId);
+
+        // Check if we reached a sensitive asset (and it's not the entry point itself)
+        if (sensitiveAssetIds.has(current.assetId) && current.depth > 0) {
+          const targetFinding = sensitiveAssets.find((f) => f.assetId === current.assetId);
+          const baseRisk = this.calculatePathRisk(
+            mapping.identityType === 'public',
+            mapping.isExcessive,
+            targetFinding?.severity || 'medium',
+          );
+          const hopPenalty = Math.max(0, (current.depth - 1) * 5);
+          const riskScore = Math.max(10, baseRisk - hopPenalty);
+
+          const severity = riskScore >= 80 ? 'critical' : riskScore >= 60 ? 'high' : riskScore >= 40 ? 'medium' : 'low';
+
+          const attackPath = await this.prisma.attackPath.create({
+            data: {
+              tenantId,
+              title: `${current.depth}-hop path from ${mapping.identityType} access to ${targetFinding?.asset?.name || current.assetId}`,
+              description: `Multi-hop attack path via ${mapping.identityName} through ${current.depth} lineage hop(s)`,
+              severity,
+              status: 'open',
+              riskScore,
+              entryPoint: {
+                assetId: mapping.assetId,
+                identityType: mapping.identityType,
+                identityName: mapping.identityName,
+                accessLevel: mapping.accessLevel,
+              },
+              targetAsset: {
+                assetId: current.assetId,
+                assetName: targetFinding?.asset?.name,
+                assetType: targetFinding?.asset?.type,
+              },
+              pathSteps: current.path.map((aid, idx) => ({
+                assetId: aid,
+                action: idx === 0 ? `Entry via ${mapping.identityType}` : `Lineage hop ${idx}`,
+              })),
+            },
+          });
+          paths.push(attackPath);
+        }
+
+        // Enqueue downstream lineage
+        if (current.depth < maxDepth) {
+          const downstream = await this.prisma.dataLineageRecord.findMany({
+            where: { tenantId, sourceAssetId: current.assetId, isActive: true },
+          });
+          for (const record of downstream) {
+            if (!visited.has(record.targetAssetId)) {
+              queue.push({
+                assetId: record.targetAssetId,
+                depth: current.depth + 1,
+                path: [...current.path, record.targetAssetId],
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return { pathsFound: paths.length, paths };
+  }
+
   private calculatePathRisk(
     isPublic: boolean,
     isExcessive: boolean,

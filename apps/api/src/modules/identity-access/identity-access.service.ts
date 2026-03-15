@@ -99,6 +99,86 @@ export class IdentityAccessService {
     return { created };
   }
 
+  /**
+   * Build identity-access mappings directly from connector AccessPolicy[] output.
+   * Called after discovery enrichment populates access policies.
+   */
+  async buildMappingsFromConnector(
+    tenantId: string,
+    assetId: string,
+    policies: { principal: string; principalType: string; permissions: string[]; source: string }[],
+  ) {
+    let created = 0;
+
+    for (const policy of policies) {
+      const permissionLevel = policy.permissions.some((p) =>
+        ['admin', 'owner', 'full_control'].includes(p.toLowerCase()),
+      )
+        ? 'admin'
+        : policy.permissions.some((p) => ['write', 'edit', 'delete'].includes(p.toLowerCase()))
+          ? 'write'
+          : 'read';
+
+      await this.prisma.identityAccessMapping.upsert({
+        where: {
+          tenantId_assetId_identityId: {
+            tenantId,
+            assetId,
+            identityId: policy.principal,
+          },
+        },
+        create: {
+          tenantId,
+          assetId,
+          identityId: policy.principal,
+          identityType: policy.principalType as any,
+          identityName: policy.principal,
+          permissionLevel,
+          accessSource: policy.source,
+          isExcessive: false,
+          isInactive: false,
+          discoveredAt: new Date(),
+        },
+        update: {
+          identityType: policy.principalType as any,
+          permissionLevel,
+          accessSource: policy.source,
+        },
+      });
+      created++;
+    }
+
+    // Run analysis on newly created mappings
+    const allMappings = await this.prisma.identityAccessMapping.findMany({
+      where: { tenantId, assetId },
+    });
+
+    let analyzed = this.accessAnalyzer.analyzeExcessivePermissions(allMappings);
+    analyzed = this.accessAnalyzer.analyzeInactiveAccess(analyzed);
+    analyzed = this.accessAnalyzer.analyzePublicSharing(analyzed);
+
+    for (const m of analyzed) {
+      if (m.isExcessive || m.isInactive) {
+        await this.prisma.identityAccessMapping.update({
+          where: { id: m.id },
+          data: {
+            isExcessive: m.isExcessive ?? false,
+            isInactive: m.isInactive ?? false,
+          },
+        });
+      }
+    }
+
+    await this.events.publish({
+      type: 'identity-access.mappings.built',
+      tenantId,
+      data: { assetId, mappingCount: created, source: 'connector' },
+      timestamp: new Date(),
+    });
+
+    return { created };
+  }
+
   async findMappings(tenantId: string, filters: IdentityAccessFilterDto = {}) {
     const { page = 1, pageSize = 20, identityType, assetId, isExcessive, isInactive } = filters;
 

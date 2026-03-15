@@ -37,6 +37,7 @@ export class Classifier {
     dataType?: string;
     sampleValues: any[];
     tableName?: string;
+    sourceType?: string;
   }): ClassificationResult[] {
     const results: ClassificationResult[] = [];
     const normalizedFieldName = input.fieldName.toLowerCase().replace(/[_-]/g, '');
@@ -106,6 +107,25 @@ export class Classifier {
 
       if (bestResult) {
         results.push(bestResult);
+      }
+    }
+
+    // Source-type-aware confidence adjustments
+    if (input.sourceType) {
+      for (const result of results) {
+        // Boost confidence for well-known SaaS identity fields
+        const identitySources = ['okta', 'azure_ad', 'ping_identity', 'sailpoint', 'cyberark'];
+        if (identitySources.includes(input.sourceType)) {
+          const identityFields = ['email', 'username', 'phone', 'name', 'displayname', 'manager', 'department'];
+          if (identityFields.some((f) => input.fieldName.toLowerCase().includes(f))) {
+            result.confidence = Math.min(0.99, result.confidence + 0.1);
+          }
+        }
+        // Lower confidence for security tool alert fields (IPs in alerts != PII)
+        const securitySources = ['splunk', 'microsoft_sentinel', 'elastic_security', 'wiz', 'prisma_cloud'];
+        if (securitySources.includes(input.sourceType) && result.labelName === 'IP Address') {
+          result.confidence = Math.max(0.3, result.confidence - 0.2);
+        }
       }
     }
 

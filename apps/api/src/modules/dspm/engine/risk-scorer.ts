@@ -236,6 +236,63 @@ export class RiskScorer {
     return Math.min(15, score);
   }
 
+  /**
+   * SaaS/collaboration exposure score — external sharing, public links, cross-org access.
+   */
+  saasExposureScore(input: {
+    externalSharingCount: number;
+    publicLinkCount: number;
+    crossOrgAccessCount: number;
+  }): number {
+    let score = 0;
+
+    if (input.publicLinkCount > 0) score += Math.min(10, input.publicLinkCount * 3);
+    if (input.externalSharingCount > 10) score += 8;
+    else if (input.externalSharingCount > 0) score += Math.min(6, input.externalSharingCount * 2);
+    if (input.crossOrgAccessCount > 5) score += 7;
+    else if (input.crossOrgAccessCount > 0) score += 3;
+
+    return Math.min(25, score);
+  }
+
+  /**
+   * DevOps exposure score — public repos, branch protection, secret scanning.
+   */
+  devopsExposureScore(input: {
+    publicRepoCount: number;
+    reposWithoutBranchProtection: number;
+    secretScanningFindings: number;
+  }): number {
+    let score = 0;
+
+    if (input.publicRepoCount > 0) score += Math.min(10, input.publicRepoCount * 4);
+    if (input.reposWithoutBranchProtection > 5) score += 5;
+    else if (input.reposWithoutBranchProtection > 0) score += 2;
+    if (input.secretScanningFindings > 10) score += 10;
+    else if (input.secretScanningFindings > 0) score += Math.min(8, input.secretScanningFindings * 2);
+
+    return Math.min(25, score);
+  }
+
+  /**
+   * Identity provider risk score — deprovisioned users with active access, cross-system excessive permissions.
+   */
+  identityProviderRiskScore(input: {
+    deprovisionedWithAccess: number;
+    crossSystemExcessiveCount: number;
+    orphanedServiceAccounts: number;
+  }): number {
+    let score = 0;
+
+    if (input.deprovisionedWithAccess > 0) score += Math.min(10, input.deprovisionedWithAccess * 5);
+    if (input.crossSystemExcessiveCount > 10) score += 8;
+    else if (input.crossSystemExcessiveCount > 0) score += Math.min(6, input.crossSystemExcessiveCount);
+    if (input.orphanedServiceAccounts > 5) score += 7;
+    else if (input.orphanedServiceAccounts > 0) score += 3;
+
+    return Math.min(25, score);
+  }
+
   private scoreToSeverity(
     score: number,
   ): 'critical' | 'high' | 'medium' | 'low' | 'info' {

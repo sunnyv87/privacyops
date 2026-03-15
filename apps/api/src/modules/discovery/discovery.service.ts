@@ -176,12 +176,130 @@ export class DiscoveryService {
         await connector.disconnect();
       }
 
+      // ── Post-discovery enrichment phases ──────────────────────
+      const enrichmentConfig = (scanJob.config as any)?.enrichment ?? {};
+      const enrichSchema = enrichmentConfig.schema !== false;
+      const enrichSampling = enrichmentConfig.sampling !== false;
+      const enrichAccess = enrichmentConfig.accessPolicies !== false;
+      const maxSampleValues = enrichmentConfig.maxSampleValuesPerField ?? 5;
+
+      const metadata = connector.getMetadata();
+      let fieldsPopulated = 0;
+      let fieldsSampled = 0;
+      let accessPoliciesCollected = 0;
+
+      // Fetch all discovered assets for this scan to enrich
+      const discoveredAssets = await this.prisma.asset.findMany({
+        where: { tenantId: scanJob.tenantId, dataSourceId: scanJob.dataSourceId, deletedAt: null },
+        select: { id: true, externalId: true },
+      });
+
+      // Phase 1: Schema enrichment via getAssetSchema()
+      if (enrichSchema && discoveredAssets.length > 0) {
+        for (const asset of discoveredAssets) {
+          try {
+            const schema = await connector.getAssetSchema(asset.externalId);
+            if (schema.fields.length > 0) {
+              for (const field of schema.fields) {
+                await this.prisma.assetField.upsert({
+                  where: { assetId_name: { assetId: asset.id, name: field.name } },
+                  create: {
+                    tenantId: scanJob.tenantId,
+                    assetId: asset.id,
+                    name: field.name,
+                    dataType: field.dataType,
+                    ordinalPosition: field.ordinalPosition,
+                    nullable: field.nullable ?? true,
+                  },
+                  update: { dataType: field.dataType, ordinalPosition: field.ordinalPosition },
+                });
+                fieldsPopulated++;
+              }
+            }
+          } catch {
+            // Non-fatal: continue enriching other assets
+          }
+        }
+
+        await this.events.publish({
+          type: 'scan.schema.completed',
+          tenantId: scanJob.tenantId,
+          payload: { scanJobId, fieldsPopulated },
+        });
+      }
+
+      // Phase 2: Content sampling via sampleContent()
+      if (enrichSampling && metadata.capabilities.supportsContentSampling && discoveredAssets.length > 0) {
+        for (const asset of discoveredAssets) {
+          try {
+            const sampleOpts = { maxRows: maxSampleValues, maxColumns: 50, sampleStrategy: 'first_n' as const, excludePatterns: [] };
+            for await (const sample of connector.sampleContent(asset.externalId, sampleOpts)) {
+              const truncatedValues = sample.values.slice(0, maxSampleValues).map((v: any) =>
+                typeof v === 'string' && v.length > 200 ? v.substring(0, 200) : v,
+              );
+              await this.prisma.assetField.updateMany({
+                where: { assetId: asset.id, name: sample.fieldName },
+                data: { sampleValues: truncatedValues },
+              });
+              fieldsSampled++;
+            }
+          } catch {
+            // Non-fatal: continue sampling other assets
+          }
+        }
+
+        await this.events.publish({
+          type: 'scan.sampling.completed',
+          tenantId: scanJob.tenantId,
+          payload: { scanJobId, fieldsSampled, dataSourceId: scanJob.dataSourceId },
+        });
+      }
+
+      // Phase 3: Access policy collection via getAccessPolicies()
+      if (enrichAccess && metadata.capabilities.supportsAccessAnalysis && typeof connector.getAccessPolicies === 'function') {
+        for (const asset of discoveredAssets) {
+          try {
+            const policies = await connector.getAccessPolicies!(asset.externalId);
+            if (policies.length > 0) {
+              await this.prisma.asset.update({
+                where: { id: asset.id },
+                data: {
+                  accessPermissions: policies.map((p) => ({
+                    principalId: p.principal,
+                    principalName: p.principal,
+                    principalType: p.principalType,
+                    permissions: p.permissions,
+                    source: p.source,
+                  })),
+                },
+              });
+              accessPoliciesCollected++;
+            }
+          } catch {
+            // Non-fatal: continue collecting other assets
+          }
+        }
+
+        await this.events.publish({
+          type: 'scan.access.completed',
+          tenantId: scanJob.tenantId,
+          payload: { scanJobId, accessPoliciesCollected, dataSourceId: scanJob.dataSourceId },
+        });
+      }
+
+      await this.events.publish({
+        type: 'scan.enrichment.completed',
+        tenantId: scanJob.tenantId,
+        payload: { scanJobId, dataSourceId: scanJob.dataSourceId },
+      });
+
       await this.prisma.scanJob.update({
         where: { id: scanJobId },
         data: {
           status: 'completed',
           completedAt: new Date(),
           assetsDiscovered,
+          stats: { assetsDiscovered, fieldsPopulated, fieldsSampled, accessPoliciesCollected },
         },
       });
 
@@ -191,7 +309,7 @@ export class DiscoveryService {
         payload: { scanJobId, assetsDiscovered },
       });
 
-      return { scanJobId, status: 'completed', assetsDiscovered };
+      return { scanJobId, status: 'completed', assetsDiscovered, fieldsPopulated, fieldsSampled, accessPoliciesCollected };
     } catch (error) {
       await this.prisma.scanJob.update({
         where: { id: scanJobId },

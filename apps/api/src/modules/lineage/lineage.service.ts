@@ -87,6 +87,64 @@ export class LineageService {
     };
   }
 
+  /**
+   * Infer lineage automatically by detecting assets with matching fingerprints
+   * across different data sources, indicating data copies/replication.
+   */
+  async inferLineageFromFingerprints(tenantId: string) {
+    const assets = await this.prisma.asset.findMany({
+      where: { tenantId, deletedAt: null, fingerprint: { not: null } },
+      select: { id: true, name: true, dataSourceId: true, fingerprint: true, discoveredAt: true },
+    });
+
+    // Group by fingerprint
+    const groups = new Map<string, typeof assets>();
+    for (const asset of assets) {
+      const fp = asset.fingerprint!;
+      const group = groups.get(fp) || [];
+      group.push(asset);
+      groups.set(fp, group);
+    }
+
+    let created = 0;
+
+    for (const [fingerprint, group] of groups) {
+      if (group.length < 2) continue;
+
+      // Sort by discoveredAt to establish direction (oldest = source)
+      group.sort((a, b) => (a.discoveredAt?.getTime() ?? 0) - (b.discoveredAt?.getTime() ?? 0));
+      const source = group[0];
+
+      for (let i = 1; i < group.length; i++) {
+        const target = group[i];
+        // Skip if same data source
+        if (source.dataSourceId === target.dataSourceId) continue;
+
+        // Check if lineage already exists
+        const existing = await this.prisma.dataLineageRecord.findFirst({
+          where: { tenantId, sourceAssetId: source.id, targetAssetId: target.id },
+        });
+
+        if (!existing) {
+          await this.prisma.dataLineageRecord.create({
+            data: {
+              tenantId,
+              sourceAssetId: source.id,
+              targetAssetId: target.id,
+              transformType: 'copy',
+              dataCategories: [],
+              metadata: { inferredFrom: 'fingerprint', fingerprint, confidence: 0.8 },
+            },
+          });
+          created++;
+        }
+      }
+    }
+
+    this.logger.log(`Inferred ${created} lineage record(s) from fingerprints for tenant ${tenantId}`);
+    return { created };
+  }
+
   async findRecords(tenantId: string, filters: LineageFilterDto = {}) {
     const { page = 1, pageSize = 20, sourceAssetId, targetAssetId, transformType } = filters;
 

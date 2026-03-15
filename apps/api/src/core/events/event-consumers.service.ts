@@ -253,6 +253,105 @@ export class EventConsumersService implements OnModuleInit {
         },
       },
 
+      // --- Post-scan enrichment consumers ---
+      {
+        event: 'scan.sampling.completed',
+        durable: 'consumer-auto-classify',
+        handler: async (e) => {
+          this.logger.log(`Scan sampling completed, triggering auto-classification for tenant ${e.tenantId}`);
+          try {
+            const classificationService = this.moduleRef.get('ClassificationService', { strict: false });
+            if (classificationService && e.data?.dataSourceId) {
+              // Find assets from this data source that have sample values
+              const assets = await this.prisma.asset.findMany({
+                where: {
+                  tenantId: e.tenantId,
+                  dataSourceId: e.data.dataSourceId,
+                  deletedAt: null,
+                  fields: { some: { sampleValues: { not: null } } },
+                },
+                select: { id: true },
+                take: 100,
+              });
+              for (const asset of assets) {
+                try {
+                  await classificationService.classifyAsset(e.tenantId, 'system', { assetId: asset.id });
+                } catch {
+                  // Non-fatal: continue classifying other assets
+                }
+              }
+            }
+          } catch {
+            this.logger.warn('ClassificationService not available for auto-classification');
+          }
+        },
+      },
+      {
+        event: 'scan.access.completed',
+        durable: 'consumer-access-mapping',
+        handler: async (e) => {
+          this.logger.log(`Scan access completed, triggering identity mapping for tenant ${e.tenantId}`);
+          try {
+            const identityService = this.moduleRef.get('IdentityAccessService', { strict: false });
+            if (identityService && e.data?.dataSourceId) {
+              const assets = await this.prisma.asset.findMany({
+                where: {
+                  tenantId: e.tenantId,
+                  dataSourceId: e.data.dataSourceId,
+                  deletedAt: null,
+                  accessPermissions: { not: null },
+                },
+                select: { id: true },
+                take: 100,
+              });
+              for (const asset of assets) {
+                try {
+                  await identityService.buildMappings(e.tenantId, asset.id);
+                } catch {
+                  // Non-fatal
+                }
+              }
+            }
+          } catch {
+            this.logger.warn('IdentityAccessService not available for access mapping');
+          }
+        },
+      },
+      {
+        event: 'scan.enrichment.completed',
+        durable: 'consumer-enrichment-sync',
+        handler: async (e) => {
+          this.logger.log(`Scan enrichment completed, triggering graph sync + risk recalc for tenant ${e.tenantId}`);
+          try {
+            const syncService = this.moduleRef.get('DataGraphSyncService', { strict: false });
+            if (syncService) {
+              await syncService.syncAll(e.tenantId);
+            }
+          } catch {
+            this.logger.warn('DataGraphSyncService not available for post-enrichment sync');
+          }
+          try {
+            const dspmService = this.moduleRef.get('DspmService', { strict: false });
+            if (dspmService && e.data?.dataSourceId) {
+              const assets = await this.prisma.asset.findMany({
+                where: { tenantId: e.tenantId, dataSourceId: e.data.dataSourceId, deletedAt: null },
+                select: { id: true },
+                take: 50,
+              });
+              for (const asset of assets) {
+                try {
+                  await dspmService.recalculateRisk(e.tenantId, asset.id);
+                } catch {
+                  // Non-fatal
+                }
+              }
+            }
+          } catch {
+            this.logger.warn('DspmService not available for post-enrichment risk recalc');
+          }
+        },
+      },
+
       // --- Audit trail consumer for compliance events ---
       {
         event: 'compliance.score.changed',

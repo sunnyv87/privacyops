@@ -96,6 +96,67 @@ export class ShadowDataService {
       alerts.push(alert);
     }
 
+    // Strategy 4: External sharing detection
+    const assetsWithAccess = await this.prisma.asset.findMany({
+      where: { tenantId, deletedAt: null, accessPermissions: { not: null } },
+      select: { id: true, name: true, type: true, accessPermissions: true, dataSourceId: true },
+    });
+
+    const externallyShared = assetsWithAccess.filter((a) => {
+      const perms = (a.accessPermissions as any[]) || [];
+      return perms.some((p) => p.principalType === 'public' || p.principalType === 'external');
+    });
+
+    if (externallyShared.length > 0) {
+      const alert = await this.prisma.shadowDataAlert.create({
+        data: {
+          tenantId,
+          alertType: 'external_sharing',
+          severity: 'high',
+          status: 'open',
+          title: `${externallyShared.length} asset(s) with external/public sharing`,
+          description: 'Assets shared publicly or with external principals detected.',
+          affectedAssets: externallyShared.map((a) => a.id),
+          metadata: { assets: externallyShared.map((a) => ({ id: a.id, name: a.name, type: a.type })) },
+        },
+      });
+      alerts.push(alert);
+    }
+
+    // Strategy 5: Collaboration sprawl — personal drives/channels with classified data
+    const collaborationSources = ['google_drive', 'onedrive', 'sharepoint', 'slack', 'teams', 'dropbox', 'confluence'];
+    const collaborationAssets = await this.prisma.asset.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        dataSource: { type: { in: collaborationSources } },
+        classifications: { some: {} },
+      },
+      select: { id: true, name: true, type: true, path: true },
+    });
+
+    const personalPatterns = [/\bpersonal\b/i, /\bmy drive\b/i, /\bprivate\b/i, /\bdirect message\b/i, /\bdm\b/i];
+    const sprawlAssets = collaborationAssets.filter((a) => {
+      const nameOrPath = `${a.name} ${a.path || ''}`;
+      return personalPatterns.some((p) => p.test(nameOrPath));
+    });
+
+    if (sprawlAssets.length > 0) {
+      const alert = await this.prisma.shadowDataAlert.create({
+        data: {
+          tenantId,
+          alertType: 'collaboration_sprawl',
+          severity: 'medium',
+          status: 'open',
+          title: `${sprawlAssets.length} classified asset(s) in personal/private spaces`,
+          description: 'Sensitive data found in personal drives or private channels.',
+          affectedAssets: sprawlAssets.map((a) => a.id),
+          metadata: { assets: sprawlAssets.map((a) => ({ id: a.id, name: a.name, path: a.path })) },
+        },
+      });
+      alerts.push(alert);
+    }
+
     await this.events.publish({
       type: 'shadow-data.scan.completed',
       tenantId,

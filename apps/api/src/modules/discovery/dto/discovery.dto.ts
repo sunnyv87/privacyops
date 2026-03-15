@@ -40,6 +40,21 @@ export class StartScanDto {
     excludePatterns?: string[];
     depth?: number;
   };
+
+  @ApiPropertyOptional({
+    description: 'Enable post-discovery enrichment phases',
+  })
+  @IsOptional()
+  enrichment?: {
+    /** Populate AssetField records via getAssetSchema(). Default: true */
+    schema?: boolean;
+    /** Collect sample values via sampleContent(). Default: true */
+    sampling?: boolean;
+    /** Collect access policies via getAccessPolicies(). Default: true */
+    accessPolicies?: boolean;
+    /** Max sample values per field. Default: 5 */
+    maxSampleValuesPerField?: number;
+  };
 }
 
 export class ScanFilterDto {

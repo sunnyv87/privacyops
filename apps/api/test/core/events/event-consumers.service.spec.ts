@@ -59,10 +59,10 @@ describe('EventConsumersService', () => {
   afterEach(() => jest.clearAllMocks());
 
   describe('onModuleInit', () => {
-    it('should register 14 event consumers', async () => {
+    it('should register 17 event consumers', async () => {
       await service.onModuleInit();
 
-      expect(mockEvents.subscribe).toHaveBeenCalledTimes(14);
+      expect(mockEvents.subscribe).toHaveBeenCalledTimes(17);
     });
 
     it('should subscribe to incident.breach_detected', async () => {

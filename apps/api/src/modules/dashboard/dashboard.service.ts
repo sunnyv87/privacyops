@@ -316,6 +316,113 @@ export class DashboardService {
     }));
   }
 
+  async getConnectorCoverage(tenantId: string) {
+    const [dataSources, healthLogs] = await Promise.all([
+      this.prisma.dataSource.findMany({
+        where: { tenantId, deletedAt: null },
+        select: { id: true, name: true, type: true, status: true, lastScanAt: true, healthStatus: true },
+      }),
+      this.prisma.connectorHealthLog.findMany({
+        where: { tenantId },
+        orderBy: { checkedAt: 'desc' },
+        distinct: ['dataSourceId'],
+        select: { dataSourceId: true, healthStatus: true, checkedAt: true },
+      }),
+    ]);
+
+    const healthMap = new Map(healthLogs.map((h) => [h.dataSourceId, h]));
+    const assetCounts = await this.prisma.asset.groupBy({
+      by: ['dataSourceId'],
+      where: { tenantId, deletedAt: null },
+      _count: { id: true },
+    });
+    const assetCountMap = new Map(assetCounts.map((a) => [a.dataSourceId, a._count.id]));
+
+    const connectors = dataSources.map((ds) => {
+      const health = healthMap.get(ds.id);
+      return {
+        dataSourceId: ds.id,
+        name: ds.name,
+        type: ds.type,
+        status: ds.status,
+        healthStatus: health?.healthStatus || ds.healthStatus || 'unknown',
+        lastScanAt: ds.lastScanAt,
+        lastHealthCheck: health?.checkedAt,
+        assetCount: assetCountMap.get(ds.id) || 0,
+      };
+    });
+
+    // Group by type
+    const byType: Record<string, { count: number; healthy: number; total_assets: number }> = {};
+    for (const c of connectors) {
+      if (!byType[c.type]) byType[c.type] = { count: 0, healthy: 0, total_assets: 0 };
+      byType[c.type].count++;
+      if (c.healthStatus === 'healthy') byType[c.type].healthy++;
+      byType[c.type].total_assets += c.assetCount;
+    }
+
+    // Data coverage metrics
+    const [totalAssets, assetsWithSchema, assetsWithSamples, assetsWithAccess] = await Promise.all([
+      this.prisma.asset.count({ where: { tenantId, deletedAt: null } }),
+      this.prisma.asset.count({
+        where: { tenantId, deletedAt: null, fields: { some: {} } },
+      }),
+      this.prisma.assetField.groupBy({
+        by: ['assetId'],
+        where: { tenantId, sampleValues: { not: null } },
+      }).then((r) => r.length),
+      this.prisma.asset.count({
+        where: { tenantId, deletedAt: null, accessPermissions: { not: null } },
+      }),
+    ]);
+
+    return {
+      totalConfigured: dataSources.length,
+      connectors,
+      byType,
+      dataCoverage: {
+        totalAssets,
+        assetsWithSchema,
+        assetsWithSamples,
+        assetsWithAccess,
+        schemaPercent: totalAssets > 0 ? Math.round((assetsWithSchema / totalAssets) * 100) : 0,
+        samplingPercent: totalAssets > 0 ? Math.round((assetsWithSamples / totalAssets) * 100) : 0,
+        accessPercent: totalAssets > 0 ? Math.round((assetsWithAccess / totalAssets) * 100) : 0,
+      },
+    };
+  }
+
+  async getRiskBySourceType(tenantId: string) {
+    const findings = await this.prisma.riskFinding.findMany({
+      where: { tenantId, deletedAt: null, status: { in: ['open', 'acknowledged'] } },
+      include: {
+        asset: {
+          include: { dataSource: { select: { type: true } } },
+        },
+      },
+    });
+
+    const bySourceType: Record<string, { count: number; critical: number; high: number; avgScore: number; totalScore: number }> = {};
+
+    for (const f of findings) {
+      const sourceType = f.asset?.dataSource?.type || 'unknown';
+      if (!bySourceType[sourceType]) {
+        bySourceType[sourceType] = { count: 0, critical: 0, high: 0, avgScore: 0, totalScore: 0 };
+      }
+      bySourceType[sourceType].count++;
+      bySourceType[sourceType].totalScore += Number(f.riskScore);
+      if (f.severity === 'critical') bySourceType[sourceType].critical++;
+      if (f.severity === 'high') bySourceType[sourceType].high++;
+    }
+
+    for (const type of Object.keys(bySourceType)) {
+      const entry = bySourceType[type];
+      entry.avgScore = entry.count > 0 ? Math.round(entry.totalScore / entry.count) : 0;
+    }
+
+    return bySourceType;
+  }
+
   async getAiGovernanceOverview(tenantId: string) {
     const [totalSystems, byRiskCategory, byStatus, datasetUsageCount] = await Promise.all([
       this.prisma.aiSystem.count({ where: { tenantId } }),

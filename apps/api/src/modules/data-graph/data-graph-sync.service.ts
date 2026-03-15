@@ -20,17 +20,27 @@ export class DataGraphSyncService {
       this.syncUsers(tenantId),
     ]);
 
+    // Post-sync: identity-access edges and external sharing
+    const [identityAccessStats, externalSharingStats] = await Promise.all([
+      this.syncIdentityAccess(tenantId),
+      this.syncExternalSharing(tenantId),
+    ]);
+
     const summary = {
       assets: assetStats,
       vendors: vendorStats,
       users: userStats,
+      identityAccess: identityAccessStats,
+      externalSharing: externalSharingStats,
     };
 
     this.logger.log(
       `Graph sync completed for tenant ${tenantId}: ` +
       `${assetStats.nodesCreated} asset nodes, ` +
       `${vendorStats.nodesCreated} vendor nodes, ` +
-      `${userStats.nodesCreated} user nodes`,
+      `${userStats.nodesCreated} user nodes, ` +
+      `${identityAccessStats.edgesCreated} access edges, ` +
+      `${externalSharingStats.edgesCreated} sharing edges`,
     );
 
     return summary;
@@ -195,5 +205,139 @@ export class DataGraphSyncService {
     }
 
     return { nodesCreated, edgesCreated: 0 };
+  }
+
+  /**
+   * Sync identity-access mappings into the graph as ACCESSIBLE_BY edges.
+   */
+  async syncIdentityAccess(tenantId: string) {
+    const mappings = await this.prisma.identityAccessMapping.findMany({
+      where: { tenantId },
+      select: {
+        identityId: true,
+        identityName: true,
+        identityType: true,
+        assetId: true,
+        permissionLevel: true,
+        accessSource: true,
+        isExcessive: true,
+        isInactive: true,
+      },
+    });
+
+    let edgesCreated = 0;
+
+    for (const mapping of mappings) {
+      // Ensure identity node exists
+      const identityNode = await this.graphService.createNode(
+        tenantId,
+        'identity',
+        mapping.identityId,
+        mapping.identityName,
+        { identityType: mapping.identityType },
+      );
+
+      // Find asset node
+      const assetNode = await this.prisma.dataGraphNode.findFirst({
+        where: { tenantId, nodeType: 'asset', entityId: mapping.assetId },
+      });
+
+      if (assetNode) {
+        // Check if edge already exists
+        const existingEdge = await this.prisma.dataGraphEdge.findFirst({
+          where: {
+            tenantId,
+            sourceNodeId: assetNode.id,
+            targetNodeId: identityNode.id,
+            relationshipType: 'ACCESSIBLE_BY',
+          },
+        });
+
+        if (!existingEdge) {
+          await this.graphService.createEdge(
+            tenantId,
+            assetNode.id,
+            identityNode.id,
+            'ACCESSIBLE_BY',
+            {
+              permissionLevel: mapping.permissionLevel,
+              source: mapping.accessSource,
+              isExcessive: mapping.isExcessive,
+              isInactive: mapping.isInactive,
+            },
+          );
+          edgesCreated++;
+        }
+      }
+    }
+
+    return { edgesCreated };
+  }
+
+  /**
+   * Detect external/public sharing and create SHARED_WITH edges to a synthetic external node.
+   */
+  async syncExternalSharing(tenantId: string) {
+    const publicMappings = await this.prisma.identityAccessMapping.findMany({
+      where: { tenantId, identityType: 'public' },
+      select: { assetId: true },
+    });
+
+    // Also check assets with public access in accessPermissions JSON
+    const assetsWithPublicAccess = await this.prisma.asset.findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, accessPermissions: true },
+    });
+
+    const publicAssetIds = new Set<string>(publicMappings.map((m) => m.assetId));
+    for (const asset of assetsWithPublicAccess) {
+      const perms = (asset.accessPermissions as any[]) || [];
+      if (perms.some((p) => p.principalType === 'public')) {
+        publicAssetIds.add(asset.id);
+      }
+    }
+
+    let edgesCreated = 0;
+
+    if (publicAssetIds.size > 0) {
+      // Create a synthetic "external/public" node
+      const externalNode = await this.graphService.createNode(
+        tenantId,
+        'identity',
+        `${tenantId}:public`,
+        'Public / External Access',
+        { synthetic: true, identityType: 'public' },
+      );
+
+      for (const assetId of publicAssetIds) {
+        const assetNode = await this.prisma.dataGraphNode.findFirst({
+          where: { tenantId, nodeType: 'asset', entityId: assetId },
+        });
+
+        if (assetNode) {
+          const existingEdge = await this.prisma.dataGraphEdge.findFirst({
+            where: {
+              tenantId,
+              sourceNodeId: assetNode.id,
+              targetNodeId: externalNode.id,
+              relationshipType: 'SHARED_WITH',
+            },
+          });
+
+          if (!existingEdge) {
+            await this.graphService.createEdge(
+              tenantId,
+              assetNode.id,
+              externalNode.id,
+              'SHARED_WITH',
+              { sharingType: 'public_access' },
+            );
+            edgesCreated++;
+          }
+        }
+      }
+    }
+
+    return { edgesCreated };
   }
 }

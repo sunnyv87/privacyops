@@ -30,6 +30,7 @@ export class ClassificationService {
         fields: dto.fieldIds
           ? { where: { id: { in: dto.fieldIds } } }
           : true,
+        dataSource: { select: { type: true } },
       },
     });
 
@@ -72,6 +73,7 @@ export class ClassificationService {
         dataType: field.dataType || undefined,
         sampleValues,
         tableName: asset.name,
+        sourceType: (asset as any).dataSource?.type,
       });
 
       // 3. Store results as Classification records

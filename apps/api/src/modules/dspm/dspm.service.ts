@@ -165,11 +165,16 @@ export class DspmService {
     const metadata = (asset.metadata as Record<string, any>) || {};
     const dsMetadata = (asset.dataSource.metadata as Record<string, any>) || {};
 
+    // Derive access signals from connector-populated accessPermissions
+    const accessPerms = (asset.accessPermissions as any[]) || [];
+    const derivedPrincipalCount = accessPerms.length > 0 ? accessPerms.length : (metadata.principalCount ?? 1);
+    const derivedPublic = accessPerms.some((p) => p.principalType === 'public') || (metadata.isPubliclyAccessible ?? false);
+
     const scoringInput: RiskScoringInput = {
       sensitivityLevel: maxSensitivity,
-      isPubliclyAccessible: metadata.isPubliclyAccessible ?? false,
+      isPubliclyAccessible: derivedPublic,
       isCrossAccountAccessible: metadata.isCrossAccountAccessible ?? false,
-      principalCount: metadata.principalCount ?? 1,
+      principalCount: derivedPrincipalCount,
       hasEncryption: metadata.hasEncryption ?? dsMetadata.hasEncryption ?? true,
       hasMfa: metadata.hasMfa ?? false,
       rowCount: Number(asset.rowCountEstimate ?? 0),

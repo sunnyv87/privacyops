@@ -102,7 +102,21 @@ export type DataSourceType =
   | 'okta'
   | 'azure_ad'
   | 'teams'
-  | 'splunk';
+  | 'splunk'
+  | 'oracle'
+  | 'cassandra'
+  | 'workday'
+  | 'hubspot'
+  | 'zendesk'
+  | 'dropbox'
+  | 'ping_identity'
+  | 'gitlab'
+  | 'bitbucket'
+  | 'jenkins'
+  | 'microsoft_sentinel'
+  | 'elastic_security'
+  | 'wiz'
+  | 'prisma_cloud';
 
 export type AssetType =
   | 'table'
@@ -122,7 +136,12 @@ export type AssetType =
   | 'index'
   | 'site'
   | 'list'
-  | 'drive';
+  | 'drive'
+  | 'keyspace'
+  | 'finding'
+  | 'alert'
+  | 'pipeline'
+  | 'job';
 
 /**
  * The interface every connector must implement.

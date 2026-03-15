@@ -20,6 +20,21 @@ import { AzureAdConnector } from './implementations/azure-ad.connector';
 import { GitHubConnector } from './implementations/github.connector';
 import { SplunkConnector } from './implementations/splunk.connector';
 import { GenericRestConnector } from './implementations/generic-rest.connector';
+// Wave 2 connectors
+import { OracleConnector } from './implementations/oracle.connector';
+import { CassandraConnector } from './implementations/cassandra.connector';
+import { WorkdayConnector } from './implementations/workday.connector';
+import { HubSpotConnector } from './implementations/hubspot.connector';
+import { ZendeskConnector } from './implementations/zendesk.connector';
+import { DropboxConnector } from './implementations/dropbox.connector';
+import { PingIdentityConnector } from './implementations/ping-identity.connector';
+import { GitLabConnector } from './implementations/gitlab.connector';
+import { BitbucketConnector } from './implementations/bitbucket.connector';
+import { JenkinsConnector } from './implementations/jenkins.connector';
+import { MicrosoftSentinelConnector } from './implementations/microsoft-sentinel.connector';
+import { ElasticSecurityConnector } from './implementations/elastic-security.connector';
+import { WizConnector } from './implementations/wiz.connector';
+import { PrismaCloudConnector } from './implementations/prisma-cloud.connector';
 
 @Module({
   controllers: [ConnectorsController],
@@ -44,6 +59,21 @@ import { GenericRestConnector } from './implementations/generic-rest.connector';
     GitHubConnector,
     SplunkConnector,
     GenericRestConnector,
+    // Wave 2
+    OracleConnector,
+    CassandraConnector,
+    WorkdayConnector,
+    HubSpotConnector,
+    ZendeskConnector,
+    DropboxConnector,
+    PingIdentityConnector,
+    GitLabConnector,
+    BitbucketConnector,
+    JenkinsConnector,
+    MicrosoftSentinelConnector,
+    ElasticSecurityConnector,
+    WizConnector,
+    PrismaCloudConnector,
   ],
   exports: [ConnectorsService, ConnectorRegistry],
 })

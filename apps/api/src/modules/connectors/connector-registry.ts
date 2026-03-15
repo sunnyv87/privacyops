@@ -29,6 +29,21 @@ import { AzureAdConnector } from './implementations/azure-ad.connector';
 import { GitHubConnector } from './implementations/github.connector';
 import { SplunkConnector } from './implementations/splunk.connector';
 import { GenericRestConnector } from './implementations/generic-rest.connector';
+// Wave 2 connectors
+import { OracleConnector } from './implementations/oracle.connector';
+import { CassandraConnector } from './implementations/cassandra.connector';
+import { WorkdayConnector } from './implementations/workday.connector';
+import { HubSpotConnector } from './implementations/hubspot.connector';
+import { ZendeskConnector } from './implementations/zendesk.connector';
+import { DropboxConnector } from './implementations/dropbox.connector';
+import { PingIdentityConnector } from './implementations/ping-identity.connector';
+import { GitLabConnector } from './implementations/gitlab.connector';
+import { BitbucketConnector } from './implementations/bitbucket.connector';
+import { JenkinsConnector } from './implementations/jenkins.connector';
+import { MicrosoftSentinelConnector } from './implementations/microsoft-sentinel.connector';
+import { ElasticSecurityConnector } from './implementations/elastic-security.connector';
+import { WizConnector } from './implementations/wiz.connector';
+import { PrismaCloudConnector } from './implementations/prisma-cloud.connector';
 
 @Injectable()
 export class ConnectorRegistry {
@@ -62,6 +77,22 @@ export class ConnectorRegistry {
     this.register('github', () => new GitHubConnector());
     this.register('splunk', () => new SplunkConnector());
     this.register('generic_rest', () => new GenericRestConnector());
+
+    // ── Wave 2 connectors ───────────────────────────────────
+    this.register('oracle', () => new OracleConnector());
+    this.register('cassandra', () => new CassandraConnector());
+    this.register('workday', () => new WorkdayConnector());
+    this.register('hubspot', () => new HubSpotConnector());
+    this.register('zendesk', () => new ZendeskConnector());
+    this.register('dropbox', () => new DropboxConnector());
+    this.register('ping_identity', () => new PingIdentityConnector());
+    this.register('gitlab', () => new GitLabConnector());
+    this.register('bitbucket', () => new BitbucketConnector());
+    this.register('jenkins', () => new JenkinsConnector());
+    this.register('microsoft_sentinel', () => new MicrosoftSentinelConnector());
+    this.register('elastic_security', () => new ElasticSecurityConnector());
+    this.register('wiz', () => new WizConnector());
+    this.register('prisma_cloud', () => new PrismaCloudConnector());
   }
 
   register(type: DataSourceType, factory: () => IConnector): void {

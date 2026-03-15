@@ -34,6 +34,20 @@ export enum DataSourceTypeEnum {
   AZURE_AD = 'azure_ad',
   TEAMS = 'teams',
   SPLUNK = 'splunk',
+  ORACLE = 'oracle',
+  CASSANDRA = 'cassandra',
+  WORKDAY = 'workday',
+  HUBSPOT = 'hubspot',
+  ZENDESK = 'zendesk',
+  DROPBOX = 'dropbox',
+  PING_IDENTITY = 'ping_identity',
+  GITLAB = 'gitlab',
+  BITBUCKET = 'bitbucket',
+  JENKINS = 'jenkins',
+  MICROSOFT_SENTINEL = 'microsoft_sentinel',
+  ELASTIC_SECURITY = 'elastic_security',
+  WIZ = 'wiz',
+  PRISMA_CLOUD = 'prisma_cloud',
 }
 
 export enum AuthMethodEnum {

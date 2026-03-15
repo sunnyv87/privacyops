@@ -40,6 +40,21 @@ describe('ConnectorRegistry', () => {
       'github',
       'splunk',
       'generic_rest',
+      // Wave 2 (14 new)
+      'oracle',
+      'cassandra',
+      'workday',
+      'hubspot',
+      'zendesk',
+      'dropbox',
+      'ping_identity',
+      'gitlab',
+      'bitbucket',
+      'jenkins',
+      'microsoft_sentinel',
+      'elastic_security',
+      'wiz',
+      'prisma_cloud',
     ];
 
     it.each(expectedTypes)('should support %s connector', (type) => {
@@ -70,9 +85,9 @@ describe('ConnectorRegistry', () => {
   });
 
   describe('getMetadata', () => {
-    it('should return metadata for all 24 registered connectors', () => {
+    it('should return metadata for all 38 registered connectors', () => {
       const metadata = registry.getMetadata();
-      expect(metadata.length).toBe(24);
+      expect(metadata.length).toBe(38);
     });
 
     it('should include correct type for each metadata entry', () => {
@@ -83,6 +98,11 @@ describe('ConnectorRegistry', () => {
       expect(types).toContain('okta');
       expect(types).toContain('github');
       expect(types).toContain('generic_rest');
+      // Wave 2
+      expect(types).toContain('oracle');
+      expect(types).toContain('cassandra');
+      expect(types).toContain('wiz');
+      expect(types).toContain('prisma_cloud');
     });
 
     it('should have valid capabilities for every connector', () => {
@@ -97,9 +117,9 @@ describe('ConnectorRegistry', () => {
   });
 
   describe('getAvailableTypes', () => {
-    it('should list all 24 registered types', () => {
+    it('should list all 38 registered types', () => {
       const types = registry.getAvailableTypes();
-      expect(types).toHaveLength(24);
+      expect(types).toHaveLength(38);
       expect(types).toContain('postgresql');
       expect(types).toContain('mysql');
       expect(types).toContain('sqlserver');
@@ -115,6 +135,21 @@ describe('ConnectorRegistry', () => {
       expect(types).toContain('github');
       expect(types).toContain('splunk');
       expect(types).toContain('generic_rest');
+      // Wave 2
+      expect(types).toContain('oracle');
+      expect(types).toContain('cassandra');
+      expect(types).toContain('workday');
+      expect(types).toContain('hubspot');
+      expect(types).toContain('zendesk');
+      expect(types).toContain('dropbox');
+      expect(types).toContain('ping_identity');
+      expect(types).toContain('gitlab');
+      expect(types).toContain('bitbucket');
+      expect(types).toContain('jenkins');
+      expect(types).toContain('microsoft_sentinel');
+      expect(types).toContain('elastic_security');
+      expect(types).toContain('wiz');
+      expect(types).toContain('prisma_cloud');
     });
   });
 });

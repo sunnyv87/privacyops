@@ -35,7 +35,19 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     try {
       const natsUrl = this.config.get('NATS_URL', 'nats://localhost:4222');
-      this.connection = await connect({ servers: natsUrl });
+      const natsToken = this.config.get<string>('NATS_TOKEN');
+      const natsUser = this.config.get<string>('NATS_USER');
+      const natsPass = this.config.get<string>('NATS_PASS');
+
+      const connectOpts: any = { servers: natsUrl };
+      if (natsToken) {
+        connectOpts.token = natsToken;
+      } else if (natsUser && natsPass) {
+        connectOpts.user = natsUser;
+        connectOpts.pass = natsPass;
+      }
+
+      this.connection = await connect(connectOpts);
 
       // Setup JetStream
       const jsm: JetStreamManager = await this.connection.jetstreamManager();
@@ -78,6 +90,12 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
   }
 
   async publish(event: PlatformEvent): Promise<void> {
+    // Validate tenantId is present and well-formed
+    if (!event.tenantId || typeof event.tenantId !== 'string' || event.tenantId.length === 0) {
+      this.logger.error(`Refusing to publish event ${event.type}: missing or invalid tenantId`);
+      return;
+    }
+
     // Auto-populate correlationId from request context if not set
     if (!event.correlationId) {
       event.correlationId = CorrelationIdMiddleware.getCorrelationId();

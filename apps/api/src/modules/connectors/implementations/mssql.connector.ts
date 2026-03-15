@@ -152,13 +152,16 @@ export class MssqlConnector extends BaseConnector {
 
     if (columns.length === 0) return;
 
-    const columnNames = columns.map((c) => `[${c.name}]`).join(', ');
+    const columnNames = columns.map((c) => `[${this.sanitizeIdentifier(c.name)}]`).join(', ');
+    const safeSchema = this.sanitizeIdentifier(schemaName);
+    const safeTable = this.sanitizeIdentifier(tableName);
+    const safeMaxRows = this.sanitizeMaxRows(options.maxRows);
 
     const rows = await this.withRetry(async () => {
       const query =
         options.sampleStrategy === 'random'
-          ? `SELECT TOP (${Number(options.maxRows)}) ${columnNames} FROM [${schemaName}].[${tableName}] ORDER BY NEWID()`
-          : `SELECT TOP (${Number(options.maxRows)}) ${columnNames} FROM [${schemaName}].[${tableName}]`;
+          ? `SELECT TOP (${safeMaxRows}) ${columnNames} FROM [${safeSchema}].[${safeTable}] ORDER BY NEWID()`
+          : `SELECT TOP (${safeMaxRows}) ${columnNames} FROM [${safeSchema}].[${safeTable}]`;
       const res = await this.pool!.request().query(query);
       return res.recordset;
     }, 'sampleContent');

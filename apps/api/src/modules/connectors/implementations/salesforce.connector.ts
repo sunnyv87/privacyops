@@ -124,8 +124,10 @@ export class SalesforceConnector extends BaseRestApiConnector {
 
     if (columns.length === 0) return;
 
-    const fieldNames = columns.map(c => c.name).join(', ');
-    const soql = `SELECT ${fieldNames} FROM ${objectName} LIMIT ${Math.min(options.maxRows, 200)}`;
+    const fieldNames = columns.map(c => this.sanitizeIdentifier(c.name)).join(', ');
+    const safeObjectName = this.sanitizeIdentifier(objectName);
+    const safeMaxRows = this.sanitizeMaxRows(options.maxRows, 200);
+    const soql = `SELECT ${fieldNames} FROM ${safeObjectName} LIMIT ${safeMaxRows}`;
 
     try {
       const result = await this.request<any>('GET', '/query', { query: { q: soql } });

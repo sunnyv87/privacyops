@@ -145,13 +145,14 @@ export class BigQueryConnector extends BaseConnector {
 
     if (columns.length === 0) return;
 
-    const columnNames = columns.map((c) => `\`${c.name}\``).join(', ');
-    const fqTable = `\`${this.projectId}\`.\`${datasetId}\`.\`${tableId}\``;
+    const columnNames = columns.map((c) => this.quoteIdentifier(c.name, '`')).join(', ');
+    const fqTable = `${this.quoteIdentifier(this.projectId, '`')}.${this.quoteIdentifier(datasetId, '`')}.${this.quoteIdentifier(tableId, '`')}`;
+    const safeMaxRows = this.sanitizeMaxRows(options.maxRows);
 
     const query =
       options.sampleStrategy === 'random'
-        ? `SELECT ${columnNames} FROM ${fqTable} ORDER BY RAND() LIMIT ${Number(options.maxRows)}`
-        : `SELECT ${columnNames} FROM ${fqTable} LIMIT ${Number(options.maxRows)}`;
+        ? `SELECT ${columnNames} FROM ${fqTable} ORDER BY RAND() LIMIT ${safeMaxRows}`
+        : `SELECT ${columnNames} FROM ${fqTable} LIMIT ${safeMaxRows}`;
 
     const [rows] = await this.withRetry(
       () => this.client!.query({ query }),

@@ -162,12 +162,14 @@ export class RedshiftConnector extends BaseConnector {
     if (columns.length === 0) return;
 
     const [schemaName, tableName] = assetExternalId.split('.');
-    const columnNames = columns.map(c => `"${c.name}"`).join(', ');
+    const columnNames = this.sanitizeColumnList(columns.map(c => c.name));
+    const safeSchema = this.quoteIdentifier(schemaName);
+    const safeTable = this.quoteIdentifier(tableName);
 
     // Redshift supports RANDOM() but it's expensive; use LIMIT for first_n
     const query = options.sampleStrategy === 'random'
-      ? `SELECT ${columnNames} FROM "${schemaName}"."${tableName}" ORDER BY RANDOM() LIMIT $1`
-      : `SELECT ${columnNames} FROM "${schemaName}"."${tableName}" LIMIT $1`;
+      ? `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} ORDER BY RANDOM() LIMIT $1`
+      : `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} LIMIT $1`;
 
     const result = await this.withRetry(
       () => this.client.query(query, [options.maxRows]),

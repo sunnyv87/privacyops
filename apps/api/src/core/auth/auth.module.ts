@@ -49,13 +49,24 @@ export class AuthModule {
         PassportModule.register({ defaultStrategy: 'jwt' }),
         JwtModule.registerAsync({
           imports: [ConfigModule],
-          useFactory: (config: ConfigService) => ({
-            secret: config.get(
-              'JWT_SECRET',
-              'dev-secret-change-in-production',
-            ),
-            signOptions: { expiresIn: '15m' },
-          }),
+          useFactory: (config: ConfigService) => {
+            const secret = config.get<string>('JWT_SECRET');
+            if (!secret || secret.length < 32) {
+              throw new Error(
+                'JWT_SECRET must be set and at least 32 characters. ' +
+                'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"',
+              );
+            }
+            return {
+              secret,
+              signOptions: {
+                expiresIn: '15m',
+                algorithm: 'HS256' as const,
+                audience: config.get<string>('JWT_AUDIENCE', 'privacyops-api'),
+                issuer: config.get<string>('JWT_ISSUER', 'privacyops-auth'),
+              },
+            };
+          },
           inject: [ConfigService],
         }),
         ConfigModule,

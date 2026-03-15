@@ -6,6 +6,36 @@ import { WorkflowService } from '@/core/workflow/workflow.service';
 import { NotificationsService } from '@/core/notifications/notifications.service';
 import { PrismaService } from '@/core/prisma/prisma.service';
 
+/** Strip sensitive data from event payloads before storing in descriptions/logs. */
+function redactEventData(data: any): string {
+  if (!data || typeof data !== 'object') return String(data ?? '');
+  const safe = { ...data };
+  // Redact fields that commonly contain PII or credentials
+  const sensitiveKeys = [
+    'email', 'password', 'token', 'secret', 'apiKey', 'api_key',
+    'accessToken', 'access_token', 'refreshToken', 'refresh_token',
+    'ssn', 'creditCard', 'credit_card', 'phoneNumber', 'phone_number',
+    'address', 'dateOfBirth', 'date_of_birth', 'ipAddress', 'ip_address',
+  ];
+  for (const key of Object.keys(safe)) {
+    if (sensitiveKeys.some(s => key.toLowerCase().includes(s.toLowerCase()))) {
+      safe[key] = '[REDACTED]';
+    }
+  }
+  return JSON.stringify(safe).slice(0, 300);
+}
+
+/** Validate that an event has the minimum required shape. */
+function validateEventPayload(e: PlatformEvent): boolean {
+  return (
+    !!e &&
+    typeof e.type === 'string' &&
+    typeof e.tenantId === 'string' &&
+    e.tenantId.length > 0 &&
+    e.data !== undefined
+  );
+}
+
 /**
  * Central event consumer that subscribes to orphaned events and routes them
  * to appropriate services, workflows, and notification channels.
@@ -153,7 +183,7 @@ export class EventConsumersService implements OnModuleInit {
                 tenantId: e.tenantId,
                 referenceNumber: `INC-${now.getFullYear()}-${String(count + 1).padStart(4, '0')}`,
                 title: `Auto-generated: Unauthorized access detected`,
-                description: `Automated incident from security event. Actor: ${e.data.actorId ?? 'unknown'}. Details: ${JSON.stringify(e.data).slice(0, 500)}`,
+                description: `Automated incident from security event. Actor: ${e.data.actorId ?? 'unknown'}. Details: ${redactEventData(e.data)}`,
                 severity: 'high',
                 status: 'reported',
                 detectedAt: now,
@@ -182,7 +212,7 @@ export class EventConsumersService implements OnModuleInit {
             tenantId: e.tenantId,
             type: 'security.suspicious_activity',
             title: 'Suspicious Activity Detected',
-            message: `Suspicious activity: ${e.data.description ?? JSON.stringify(e.data).slice(0, 200)}`,
+            message: `Suspicious activity: ${e.data.description ?? redactEventData(e.data)}`,
             severity: 'warning',
             channels: ['in_app', 'webhook'],
           });
@@ -423,8 +453,16 @@ export class EventConsumersService implements OnModuleInit {
 
     let subscribed = 0;
     for (const { event, durable, handler } of consumers) {
+      // Wrap each handler with payload validation
+      const validatedHandler = async (e: PlatformEvent) => {
+        if (!validateEventPayload(e)) {
+          this.logger.warn(`Dropping malformed event for ${event}: missing required fields`);
+          return;
+        }
+        await handler(e);
+      };
       try {
-        await this.events.subscribe(event, durable, handler);
+        await this.events.subscribe(event, durable, validatedHandler);
         subscribed++;
       } catch {
         this.logger.warn(`Could not subscribe to ${event} (NATS may be unavailable)`);

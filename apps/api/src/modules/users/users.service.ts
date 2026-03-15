@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
@@ -128,6 +128,21 @@ export class UsersService {
 
   async assignRoles(tenantId: string, userId: string, actorId: string, roleIds: string[]) {
     await this.findById(tenantId, userId);
+
+    // Validate that all roleIds exist and belong to this tenant
+    if (roleIds.length > 0) {
+      const validRoles = await this.prisma.role.findMany({
+        where: { id: { in: roleIds }, tenantId },
+        select: { id: true },
+      });
+      const validIds = new Set(validRoles.map((r) => r.id));
+      const invalidIds = roleIds.filter((id) => !validIds.has(id));
+      if (invalidIds.length > 0) {
+        throw new BadRequestException(
+          `Invalid role IDs for this tenant: ${invalidIds.join(', ')}`,
+        );
+      }
+    }
 
     // Remove existing roles and assign new ones
     await this.prisma.$transaction([

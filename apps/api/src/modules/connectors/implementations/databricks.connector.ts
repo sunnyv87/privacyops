@@ -141,7 +141,7 @@ export class DatabricksConnector extends BaseRestApiConnector {
     const parts = assetExternalId.split('.');
     if (parts.length < 3) return;
 
-    const fullTableName = parts.map(p => `\`${p}\``).join('.');
+    const fullTableName = parts.map(p => this.quoteIdentifier(p, '`')).join('.');
     const schema = await this.getAssetSchema(assetExternalId);
     const columns = schema.fields
       .slice(0, options.maxColumns)
@@ -149,8 +149,9 @@ export class DatabricksConnector extends BaseRestApiConnector {
 
     if (columns.length === 0) return;
 
-    const columnNames = columns.map(c => `\`${c.name}\``).join(', ');
-    const sql = `SELECT ${columnNames} FROM ${fullTableName} LIMIT ${options.maxRows}`;
+    const columnNames = columns.map(c => this.quoteIdentifier(c.name, '`')).join(', ');
+    const safeMaxRows = this.sanitizeMaxRows(options.maxRows);
+    const sql = `SELECT ${columnNames} FROM ${fullTableName} LIMIT ${safeMaxRows}`;
 
     const { warehouseId } = this.config.credentials;
     const stmtResp = await this.request<any>('POST', '/api/2.0/sql/statements', {

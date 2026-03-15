@@ -181,9 +181,11 @@ export class CassandraConnector extends BaseConnector {
 
     if (columns.length === 0) return;
 
-    const columnNames = columns.map(c => `"${c.name}"`).join(', ');
+    const columnNames = this.sanitizeColumnList(columns.map(c => c.name));
+    const safeKeyspace = this.quoteIdentifier(keyspace);
+    const safeTable = this.quoteIdentifier(tableName);
     // CQL uses LIMIT, no ORDER BY RANDOM — always sequential
-    const query = `SELECT ${columnNames} FROM "${keyspace}"."${tableName}" LIMIT ?`;
+    const query = `SELECT ${columnNames} FROM ${safeKeyspace}.${safeTable} LIMIT ?`;
 
     const result = await this.withRetry(
       () => this.client.execute(query, [options.maxRows], { prepare: true }),

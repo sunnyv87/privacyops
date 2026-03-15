@@ -22,6 +22,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: jwtSecret,
+      algorithms: ['HS256'],
+      audience: config.get<string>('JWT_AUDIENCE', 'privacyops-api'),
+      issuer: config.get<string>('JWT_ISSUER', 'privacyops-auth'),
     });
   }
 

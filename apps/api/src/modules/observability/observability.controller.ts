@@ -26,9 +26,9 @@ export class ObservabilityController {
   @RequirePermissions('observability:read')
   @ApiOperation({ summary: 'Query service metrics' })
   async getMetrics(
+    @CurrentUser('tenantId') tenantId: string,
     @Query('service_name') serviceName?: string,
     @Query('metric_name') metricName?: string,
-    @Query('tenant_id') tenantId?: string,
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
     @Query('page') page?: number,

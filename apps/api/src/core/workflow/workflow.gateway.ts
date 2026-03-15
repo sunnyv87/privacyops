@@ -6,6 +6,7 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 
@@ -26,7 +27,10 @@ import { JwtService } from '@nestjs/jwt';
  */
 @WebSocketGateway({
   namespace: '/workflows',
-  cors: { origin: '*' },
+  cors: {
+    origin: (process.env.CORS_ORIGINS || 'http://localhost:3000').split(','),
+    credentials: true,
+  },
 })
 export class WorkflowGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect

@@ -147,12 +147,14 @@ export class MysqlConnector extends BaseConnector {
 
     if (columns.length === 0) return;
 
-    const columnNames = columns.map((c) => `\`${c.name}\``).join(', ');
+    const columnNames = columns.map((c) => this.quoteIdentifier(c.name, '`')).join(', ');
+    const safeSchema = this.quoteIdentifier(schemaName, '`');
+    const safeTable = this.quoteIdentifier(tableName, '`');
     const rows = await this.withRetry(async () => {
       const query =
         options.sampleStrategy === 'random'
-          ? `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` ORDER BY RAND() LIMIT ?`
-          : `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` LIMIT ?`;
+          ? `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} ORDER BY RAND() LIMIT ?`
+          : `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} LIMIT ?`;
       const [rows] = await this.pool.query(query, [options.maxRows]);
       return rows as any[];
     }, 'sampleContent');

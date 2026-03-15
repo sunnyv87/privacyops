@@ -153,12 +153,14 @@ export class PostgresConnector implements IConnector {
 
     if (columns.length === 0) return;
 
-    // Sample rows
-    const columnNames = columns.map((c) => `"${c.name}"`).join(', ');
+    // Sample rows — sanitize identifiers to prevent injection
+    const columnNames = this.sanitizeColumnList(columns.map((c) => c.name));
+    const safeSchema = this.quoteIdentifier(schemaName);
+    const safeTable = this.quoteIdentifier(tableName);
     const query =
       options.sampleStrategy === 'random'
-        ? `SELECT ${columnNames} FROM "${schemaName}"."${tableName}" ORDER BY RANDOM() LIMIT $1`
-        : `SELECT ${columnNames} FROM "${schemaName}"."${tableName}" LIMIT $1`;
+        ? `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} ORDER BY RANDOM() LIMIT $1`
+        : `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} LIMIT $1`;
 
     const result = await this.client.query(query, [options.maxRows]);
 

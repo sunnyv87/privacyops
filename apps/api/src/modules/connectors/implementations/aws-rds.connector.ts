@@ -151,10 +151,12 @@ export class AwsRdsConnector extends BaseConnector {
     const [schemaName, tableName] = assetExternalId.split('.');
 
     if (this.engine === 'mysql') {
-      const columnNames = columns.map(c => `\`${c.name}\``).join(', ');
+      const columnNames = columns.map(c => this.quoteIdentifier(c.name, '`')).join(', ');
+      const safeSchema = this.quoteIdentifier(schemaName, '`');
+      const safeTable = this.quoteIdentifier(tableName, '`');
       const query = options.sampleStrategy === 'random'
-        ? `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` ORDER BY RAND() LIMIT ?`
-        : `SELECT ${columnNames} FROM \`${schemaName}\`.\`${tableName}\` LIMIT ?`;
+        ? `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} ORDER BY RAND() LIMIT ?`
+        : `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} LIMIT ?`;
       const [rows] = await this.withRetry(
         () => this.mysqlPool!.query(query, [options.maxRows]),
         'sampleContent',
@@ -165,10 +167,12 @@ export class AwsRdsConnector extends BaseConnector {
         yield { assetExternalId, fieldName: column.name, values: values.slice(0, 100), totalSampled: values.length };
       }
     } else {
-      const columnNames = columns.map(c => `"${c.name}"`).join(', ');
+      const columnNames = this.sanitizeColumnList(columns.map(c => c.name));
+      const safeSchema = this.quoteIdentifier(schemaName);
+      const safeTable = this.quoteIdentifier(tableName);
       const query = options.sampleStrategy === 'random'
-        ? `SELECT ${columnNames} FROM "${schemaName}"."${tableName}" ORDER BY RANDOM() LIMIT $1`
-        : `SELECT ${columnNames} FROM "${schemaName}"."${tableName}" LIMIT $1`;
+        ? `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} ORDER BY RANDOM() LIMIT $1`
+        : `SELECT ${columnNames} FROM ${safeSchema}.${safeTable} LIMIT $1`;
       const result = await this.withRetry(
         () => this.pgClient!.query(query, [options.maxRows]),
         'sampleContent',

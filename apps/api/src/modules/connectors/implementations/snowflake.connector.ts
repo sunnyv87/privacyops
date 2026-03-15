@@ -204,13 +204,17 @@ export class SnowflakeConnector extends BaseConnector {
 
     if (columns.length === 0) return;
 
-    const columnNames = columns.map((c) => `"${c.name}"`).join(', ');
-    const qualifiedTable = `${database}.${schema}.${table}`;
+    const columnNames = this.sanitizeColumnList(columns.map((c) => c.name));
+    const safeDb = this.quoteIdentifier(database);
+    const safeSchema = this.quoteIdentifier(schema);
+    const safeTable = this.quoteIdentifier(table);
+    const qualifiedTable = `${safeDb}.${safeSchema}.${safeTable}`;
+    const safeMaxRows = this.sanitizeMaxRows(options.maxRows);
 
     const query =
       options.sampleStrategy === 'random'
-        ? `SELECT ${columnNames} FROM ${qualifiedTable} SAMPLE (${options.maxRows} ROWS)`
-        : `SELECT ${columnNames} FROM ${qualifiedTable} LIMIT ${options.maxRows}`;
+        ? `SELECT ${columnNames} FROM ${qualifiedTable} SAMPLE (${safeMaxRows} ROWS)`
+        : `SELECT ${columnNames} FROM ${qualifiedTable} LIMIT ${safeMaxRows}`;
 
     const rows = await this.withRetry(
       () => this.executeQuery(query),

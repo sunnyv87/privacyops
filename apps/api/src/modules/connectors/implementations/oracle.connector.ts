@@ -171,11 +171,13 @@ export class OracleConnector extends BaseConnector {
 
     if (columns.length === 0) return;
 
-    const columnNames = columns.map(c => `"${c.name}"`).join(', ');
+    const columnNames = this.sanitizeColumnList(columns.map(c => c.name));
+    const safeOwner = this.quoteIdentifier(owner);
+    const safeTable = this.quoteIdentifier(tableName);
     // Oracle uses FETCH FIRST N ROWS ONLY (12c+) or ROWNUM
     const query = options.sampleStrategy === 'random'
-      ? `SELECT ${columnNames} FROM "${owner}"."${tableName}" ORDER BY DBMS_RANDOM.VALUE FETCH FIRST :maxRows ROWS ONLY`
-      : `SELECT ${columnNames} FROM "${owner}"."${tableName}" FETCH FIRST :maxRows ROWS ONLY`;
+      ? `SELECT ${columnNames} FROM ${safeOwner}.${safeTable} ORDER BY DBMS_RANDOM.VALUE FETCH FIRST :maxRows ROWS ONLY`
+      : `SELECT ${columnNames} FROM ${safeOwner}.${safeTable} FETCH FIRST :maxRows ROWS ONLY`;
 
     const result = await this.withRetry(
       () => this.connection.execute(query, [options.maxRows]),

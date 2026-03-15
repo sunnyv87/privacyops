@@ -200,10 +200,13 @@ export class SapHanaConnector extends BaseConnector {
 
       if (columns.length === 0) return;
 
-      const columnNames = columns.map(c => `"${c.name}"`).join(', ');
+      const columnNames = this.sanitizeColumnList(columns.map(c => c.name));
+      const safeSchema = this.quoteIdentifier(schemaName);
+      const safeTable = this.quoteIdentifier(tableName);
+      const safeMaxRows = this.sanitizeMaxRows(options.maxRows, 100);
       const rows = await this.query(
-        `SELECT TOP ${Math.min(options.maxRows, 100)} ${columnNames}
-         FROM "${schemaName}"."${tableName}"`,
+        `SELECT TOP ${safeMaxRows} ${columnNames}
+         FROM ${safeSchema}.${safeTable}`,
       );
 
       for (const column of columns) {

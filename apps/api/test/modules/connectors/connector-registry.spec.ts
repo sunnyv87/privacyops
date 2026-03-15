@@ -55,6 +55,12 @@ describe('ConnectorRegistry', () => {
       'elastic_security',
       'wiz',
       'prisma_cloud',
+      // Wave 3 (5 new)
+      'sap_hana',
+      'jira',
+      'confluence',
+      'cyberark',
+      'sailpoint',
     ];
 
     it.each(expectedTypes)('should support %s connector', (type) => {
@@ -85,9 +91,9 @@ describe('ConnectorRegistry', () => {
   });
 
   describe('getMetadata', () => {
-    it('should return metadata for all 38 registered connectors', () => {
+    it('should return metadata for all 43 registered connectors', () => {
       const metadata = registry.getMetadata();
-      expect(metadata.length).toBe(38);
+      expect(metadata.length).toBe(43);
     });
 
     it('should include correct type for each metadata entry', () => {
@@ -103,6 +109,12 @@ describe('ConnectorRegistry', () => {
       expect(types).toContain('cassandra');
       expect(types).toContain('wiz');
       expect(types).toContain('prisma_cloud');
+      // Wave 3
+      expect(types).toContain('sap_hana');
+      expect(types).toContain('jira');
+      expect(types).toContain('confluence');
+      expect(types).toContain('cyberark');
+      expect(types).toContain('sailpoint');
     });
 
     it('should have valid capabilities for every connector', () => {
@@ -117,9 +129,9 @@ describe('ConnectorRegistry', () => {
   });
 
   describe('getAvailableTypes', () => {
-    it('should list all 38 registered types', () => {
+    it('should list all 43 registered types', () => {
       const types = registry.getAvailableTypes();
-      expect(types).toHaveLength(38);
+      expect(types).toHaveLength(43);
       expect(types).toContain('postgresql');
       expect(types).toContain('mysql');
       expect(types).toContain('sqlserver');
@@ -150,6 +162,12 @@ describe('ConnectorRegistry', () => {
       expect(types).toContain('elastic_security');
       expect(types).toContain('wiz');
       expect(types).toContain('prisma_cloud');
+      // Wave 3
+      expect(types).toContain('sap_hana');
+      expect(types).toContain('jira');
+      expect(types).toContain('confluence');
+      expect(types).toContain('cyberark');
+      expect(types).toContain('sailpoint');
     });
   });
 });

@@ -44,6 +44,12 @@ import { MicrosoftSentinelConnector } from './implementations/microsoft-sentinel
 import { ElasticSecurityConnector } from './implementations/elastic-security.connector';
 import { WizConnector } from './implementations/wiz.connector';
 import { PrismaCloudConnector } from './implementations/prisma-cloud.connector';
+// Wave 3 connectors
+import { SapHanaConnector } from './implementations/sap-hana.connector';
+import { JiraConnector } from './implementations/jira.connector';
+import { ConfluenceConnector } from './implementations/confluence.connector';
+import { CyberArkConnector } from './implementations/cyberark.connector';
+import { SailPointConnector } from './implementations/sailpoint.connector';
 
 @Injectable()
 export class ConnectorRegistry {
@@ -93,6 +99,13 @@ export class ConnectorRegistry {
     this.register('elastic_security', () => new ElasticSecurityConnector());
     this.register('wiz', () => new WizConnector());
     this.register('prisma_cloud', () => new PrismaCloudConnector());
+
+    // ── Wave 3 connectors ───────────────────────────────────
+    this.register('sap_hana', () => new SapHanaConnector());
+    this.register('jira', () => new JiraConnector());
+    this.register('confluence', () => new ConfluenceConnector());
+    this.register('cyberark', () => new CyberArkConnector());
+    this.register('sailpoint', () => new SailPointConnector());
   }
 
   register(type: DataSourceType, factory: () => IConnector): void {

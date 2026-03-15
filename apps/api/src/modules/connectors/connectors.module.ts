@@ -35,6 +35,12 @@ import { MicrosoftSentinelConnector } from './implementations/microsoft-sentinel
 import { ElasticSecurityConnector } from './implementations/elastic-security.connector';
 import { WizConnector } from './implementations/wiz.connector';
 import { PrismaCloudConnector } from './implementations/prisma-cloud.connector';
+// Wave 3 connectors
+import { SapHanaConnector } from './implementations/sap-hana.connector';
+import { JiraConnector } from './implementations/jira.connector';
+import { ConfluenceConnector } from './implementations/confluence.connector';
+import { CyberArkConnector } from './implementations/cyberark.connector';
+import { SailPointConnector } from './implementations/sailpoint.connector';
 
 @Module({
   controllers: [ConnectorsController],
@@ -74,6 +80,12 @@ import { PrismaCloudConnector } from './implementations/prisma-cloud.connector';
     ElasticSecurityConnector,
     WizConnector,
     PrismaCloudConnector,
+    // Wave 3
+    SapHanaConnector,
+    JiraConnector,
+    ConfluenceConnector,
+    CyberArkConnector,
+    SailPointConnector,
   ],
   exports: [ConnectorsService, ConnectorRegistry],
 })

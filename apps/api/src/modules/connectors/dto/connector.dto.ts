@@ -48,6 +48,11 @@ export enum DataSourceTypeEnum {
   ELASTIC_SECURITY = 'elastic_security',
   WIZ = 'wiz',
   PRISMA_CLOUD = 'prisma_cloud',
+  SAP_HANA = 'sap_hana',
+  JIRA = 'jira',
+  CONFLUENCE = 'confluence',
+  CYBERARK = 'cyberark',
+  SAILPOINT = 'sailpoint',
 }
 
 export enum AuthMethodEnum {

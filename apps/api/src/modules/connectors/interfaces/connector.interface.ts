@@ -116,7 +116,12 @@ export type DataSourceType =
   | 'microsoft_sentinel'
   | 'elastic_security'
   | 'wiz'
-  | 'prisma_cloud';
+  | 'prisma_cloud'
+  | 'sap_hana'
+  | 'jira'
+  | 'confluence'
+  | 'cyberark'
+  | 'sailpoint';
 
 export type AssetType =
   | 'table'
@@ -141,7 +146,11 @@ export type AssetType =
   | 'finding'
   | 'alert'
   | 'pipeline'
-  | 'job';
+  | 'job'
+  | 'space'
+  | 'project'
+  | 'vault'
+  | 'safe';
 
 /**
  * The interface every connector must implement.

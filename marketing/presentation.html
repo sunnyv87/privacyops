@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TechD PrivacyOps + DSPM — Investor & Customer Deck</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css" id="theme">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css">
+
+  <style>
+    :root {
+      --accent: #00d2ff;
+      --accent-2: #7c5cff;
+      --soft: #e5e7eb;
+    }
+    .reveal {
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+      color: var(--soft);
+    }
+    .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+      text-transform: none;
+      letter-spacing: -0.01em;
+      color: #ffffff;
+    }
+    .reveal h1 { font-size: 2.4em; }
+    .reveal h2 { font-size: 1.6em; }
+    .reveal h3 { font-size: 1.2em; color: var(--accent); }
+    .reveal .accent { color: var(--accent); }
+    .reveal .muted { color: #9ca3af; }
+    .reveal ul, .reveal ol { display: inline-block; text-align: left; }
+    .reveal li { margin: 0.35em 0; }
+    .reveal table {
+      font-size: 0.55em;
+      margin: 0 auto;
+      border-collapse: collapse;
+    }
+    .reveal table th,
+    .reveal table td {
+      padding: 0.35em 0.7em;
+      border: 1px solid #2d3748;
+      text-align: left;
+    }
+    .reveal table th {
+      background: #111827;
+      color: var(--accent);
+    }
+    .reveal .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5em;
+      text-align: left;
+    }
+    .reveal .three-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1em;
+      text-align: left;
+    }
+    .reveal .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 1em;
+      font-size: 0.7em;
+    }
+    .reveal .card h3 { margin: 0 0 0.4em 0; font-size: 1em; }
+    .reveal .metric {
+      font-size: 2.2em;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .reveal .metric-label {
+      font-size: 0.55em;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .reveal .chip {
+      display: inline-block;
+      background: rgba(124,92,255,0.15);
+      border: 1px solid rgba(124,92,255,0.4);
+      color: #cdb5ff;
+      padding: 0.2em 0.55em;
+      border-radius: 999px;
+      font-size: 0.55em;
+      margin: 0.15em;
+    }
+    .reveal pre {
+      font-size: 0.45em;
+      box-shadow: none;
+    }
+    .reveal .hero {
+      background: linear-gradient(135deg, #0b1020 0%, #1a1040 50%, #0b1020 100%);
+    }
+    .reveal .section-title {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .reveal .footer {
+      position: absolute;
+      bottom: 0.5em;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 0.4em;
+      color: #6b7280;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- Slide 1 — Title -->
+      <section class="hero">
+        <h1 class="section-title">TechD PrivacyOps + DSPM</h1>
+        <h3 style="margin-top: 0.6em;">The Unified Control Plane for Privacy, Data Posture, and Compliance</h3>
+        <p class="muted" style="margin-top: 1.5em;">Investor &amp; Customer Deck · 2026</p>
+        <div class="footer">techd.example · sales@techd.example</div>
+      </section>
+
+      <!-- Slide 2 — The Problem -->
+      <section>
+        <h2>The Problem</h2>
+        <p class="muted">Enterprise data sprawl has outpaced legacy privacy tooling.</p>
+        <div class="two-col" style="margin-top: 1em;">
+          <ul>
+            <li>Personal data scattered across 30+ SaaS apps and 5+ warehouses</li>
+            <li>DSARs take 20+ days and still miss systems</li>
+            <li>"Where is this customer's data?" — nobody can answer</li>
+          </ul>
+          <ul>
+            <li>Audit logs are append-only files — tamperable</li>
+            <li>Regulators demand proof, not policies</li>
+            <li>Five disconnected tools, zero shared audit trail</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 3 — Solution -->
+      <section>
+        <h2>One Platform. One Audit Trail. One Truth.</h2>
+        <p class="muted">Discovery · Consent · DSAR · Breach · Retention · DPIA · Vendor · Deletion</p>
+        <div class="three-col" style="margin-top: 1.2em;">
+          <div class="card"><h3>Discover</h3>34 connectors across clouds, SaaS, warehouses, and endpoints.</div>
+          <div class="card"><h3>Orchestrate</h3>8 Temporal workflows with durable execution and retries.</div>
+          <div class="card"><h3>Prove</h3>SHA-256 chained audit, 26 metrics, tamper-evident by design.</div>
+        </div>
+      </section>
+
+      <!-- Slide 4 — Metrics / Stats -->
+      <section>
+        <h2>Built, Not Promised</h2>
+        <div class="three-col" style="margin-top: 2em; text-align: center;">
+          <div><div class="metric">34</div><div class="metric-label">Production Connectors</div></div>
+          <div><div class="metric">8</div><div class="metric-label">Durable Workflows</div></div>
+          <div><div class="metric">952</div><div class="metric-label">Automated Tests Passing</div></div>
+        </div>
+        <div class="three-col" style="margin-top: 2em; text-align: center;">
+          <div><div class="metric">26</div><div class="metric-label">Prometheus Metrics</div></div>
+          <div><div class="metric">6</div><div class="metric-label">RBAC Enforcement Layers</div></div>
+          <div><div class="metric">7</div><div class="metric-label">Security Domains Hardened</div></div>
+        </div>
+      </section>
+
+      <!-- Slide 5 — Architecture -->
+      <section>
+        <h2>Architecture</h2>
+        <pre><code class="language-text">┌───────────────────────────────────────────────────────────┐
+│                Clients / Portals / Integrations           │
+├───────────────────────────────────────────────────────────┤
+│   NestJS API  │  Six-Layer RBAC  │  Field-Mask  │  OTel   │
+├───────────────────────────────────────────────────────────┤
+│  Temporal Workflows  │  NATS JetStream Event Bus + DLQ    │
+├───────────────────────────────────────────────────────────┤
+│   Data Graph   │  Connector SDK (34)  │  Policy Engine    │
+├───────────────────────────────────────────────────────────┤
+│ PostgreSQL (Prisma)  │  Envelope Encryption  │  Audit Chain │
+└───────────────────────────────────────────────────────────┘</code></pre>
+        <p class="muted" style="font-size: 0.55em;">Stateless API tier · Multi-tenant from day one · Kubernetes-native</p>
+      </section>
+
+      <!-- Slide 6 — Connectors -->
+      <section>
+        <h2>34 Production Connectors</h2>
+        <h3>Wave 1 · Wave 2 · Wave 3</h3>
+        <div style="margin-top: 1em;">
+          <span class="chip">AWS S3</span><span class="chip">Azure Blob</span><span class="chip">GCS</span>
+          <span class="chip">Snowflake</span><span class="chip">BigQuery</span><span class="chip">Redshift</span>
+          <span class="chip">Databricks</span><span class="chip">PostgreSQL</span><span class="chip">MySQL</span>
+          <span class="chip">MongoDB</span><span class="chip">SQL Server</span><span class="chip">Oracle</span>
+          <span class="chip">Salesforce</span><span class="chip">HubSpot</span><span class="chip">Workday</span>
+          <span class="chip">ServiceNow</span><span class="chip">Zendesk</span><span class="chip">Stripe</span>
+          <span class="chip">Microsoft 365</span><span class="chip">Google Workspace</span><span class="chip">Slack</span>
+          <span class="chip">Confluence</span><span class="chip">Jira</span><span class="chip">Notion</span>
+          <span class="chip">GitHub</span><span class="chip">GitLab</span><span class="chip">Okta</span>
+          <span class="chip">Entra ID</span><span class="chip">BambooHR</span><span class="chip">Marketo</span>
+          <span class="chip">Mailchimp</span><span class="chip">Segment</span><span class="chip">+ more</span>
+        </div>
+        <p class="muted" style="margin-top: 1.2em; font-size: 0.6em;">
+          Shared SDK: retry-with-jitter · Retry-After honoring · pagination · rate-limit handling · 10-min health checks
+        </p>
+      </section>
+
+      <!-- Slide 7 — Workflows -->
+      <section>
+        <h2>8 Temporal Workflows</h2>
+        <table>
+          <thead>
+            <tr><th>Workflow</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Data Scan &amp; Discovery</td><td>Crawl, sample, classify personal data</td></tr>
+            <tr><td>DSAR Fulfillment</td><td>Access / Delete / Rectify / Port / Restrict — end-to-end</td></tr>
+            <tr><td>Breach Response</td><td>Intake → blast radius → regulator pack</td></tr>
+            <tr><td>Retention Enforcement</td><td>Policy-driven auto-deletion</td></tr>
+            <tr><td>Remediation</td><td>Auto-fix misconfigurations (public buckets, over-permissive grants)</td></tr>
+            <tr><td>Vendor Review</td><td>Third-party risk lifecycle</td></tr>
+            <tr><td>DPIA Approval</td><td>Risk scoring + immutable sign-offs</td></tr>
+            <tr><td>Data Deletion</td><td>Cryptographic proof-of-deletion</td></tr>
+          </tbody>
+        </table>
+        <p class="muted" style="font-size: 0.55em; margin-top: 1em;">
+          Every workflow: scheduleToCloseTimeout · heartbeatTimeout · backoffCoefficient 2 · durable replay
+        </p>
+      </section>
+
+      <!-- Slide 8 — Data Graph -->
+      <section>
+        <h2>Live Data Graph</h2>
+        <h3>Your personal-data X-ray</h3>
+        <div class="two-col" style="margin-top: 1em;">
+          <ul>
+            <li><span class="accent">Path finding</span> — PII flow across systems</li>
+            <li><span class="accent">Neighbor expansion</span> with 500-edge cap</li>
+            <li><span class="accent">Subgraph extraction</span> for DPIA scoping</li>
+            <li><span class="accent">Blast-radius</span> analysis on breach</li>
+          </ul>
+          <ul>
+            <li>Bounded BFS: 50K edges / 20 paths / 10K visited</li>
+            <li>Batched sync: 50 nodes/edges per batch (Promise.all)</li>
+            <li>Composite indexes on (tenant, src, dst)</li>
+            <li>Sub-second on million-node estates</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 9 — DSAR Engine -->
+      <section>
+        <h2>DSAR Engine</h2>
+        <h3>Press the button, get a regulator-ready package</h3>
+        <div class="three-col" style="margin-top: 1em;">
+          <div class="card"><h3>Intake</h3>API + portal hooks · OIDC / magic-link / document ID verification</div>
+          <div class="card"><h3>Fan-Out</h3>Single job searches all 34 connectors · Data Graph resolves derived copies</div>
+          <div class="card"><h3>Deliver</h3>Redact UI · JSON + PDF evidence bundle · SHA-256 hash · SLA timers</div>
+        </div>
+        <p class="muted" style="font-size: 0.55em; margin-top: 1em;">
+          Jurisdiction-aware SLAs: GDPR 30d · CCPA 45d · DPDPA as notified
+        </p>
+      </section>
+
+      <!-- Slide 10 — Breach Response -->
+      <section>
+        <h2>Breach Response — 72 Hours, Orchestrated</h2>
+        <ul>
+          <li>Incident intake with severity auto-classification</li>
+          <li><span class="accent">Blast-radius</span> via Data Graph BFS</li>
+          <li>Data-subject enumeration across all connectors</li>
+          <li>Regulator-ready packs: GDPR Art. 33 · DPDPA · state-level US</li>
+          <li>Approval-gated notification workflow</li>
+          <li>Chain-of-custody preserved cryptographically</li>
+        </ul>
+      </section>
+
+      <!-- Slide 11 — Security -->
+      <section>
+        <h2>Security by Construction</h2>
+        <div class="two-col" style="margin-top: 1em;">
+          <div>
+            <h3>Encryption</h3>
+            <ul style="font-size: 0.7em;">
+              <li>AES-256-GCM envelope</li>
+              <li>HKDF per-tenant key derivation</li>
+              <li>One tenant key ≠ cross-tenant compromise</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Audit Chain</h3>
+            <ul style="font-size: 0.7em;">
+              <li>SHA-256 linked events</li>
+              <li>Per-tenant chain state</li>
+              <li>Tamper = cryptographically detectable</li>
+            </ul>
+          </div>
+        </div>
+        <div style="margin-top: 1em;">
+          <h3>Six-Layer RBAC</h3>
+          <p style="font-size: 0.7em;">CSRF → JWT → Tenant → Permissions → ABAC → Approval</p>
+        </div>
+      </section>
+
+      <!-- Slide 12 — Reliability -->
+      <section>
+        <h2>Reliability Hardening</h2>
+        <p class="muted">Built to enterprise SRE standards</p>
+        <div class="two-col" style="margin-top: 1em;">
+          <ul style="font-size: 0.7em;">
+            <li>30s global request timeout (RxJS)</li>
+            <li>1 MB request body limit</li>
+            <li>120s socket timeout + graceful shutdown</li>
+            <li>Redis distributed locks for cron jobs</li>
+          </ul>
+          <ul style="font-size: 0.7em;">
+            <li>NATS JetStream DLQ + idempotent consumers</li>
+            <li>Postgres statement_timeout = 30s</li>
+            <li>Slow query logging &gt; 500 ms</li>
+            <li>Connector health cron every 10 min</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 13 — Observability -->
+      <section>
+        <h2>Observability Out of the Box</h2>
+        <div class="three-col" style="margin-top: 1.5em;">
+          <div class="card"><h3>OpenTelemetry</h3>Auto-instrumentation · OTLP exporter · Grafana / Datadog / Honeycomb-ready</div>
+          <div class="card"><h3>26 Prometheus Metrics</h3>Request volume, latency, error rate, connector health, workflow success, DLQ depth</div>
+          <div class="card"><h3>Trace ↔ Log Correlation</h3>Request IDs link every log line to a distributed trace</div>
+        </div>
+      </section>
+
+      <!-- Slide 14 — Compliance -->
+      <section>
+        <h2>Compliance Alignment</h2>
+        <table>
+          <thead>
+            <tr><th>Regulation</th><th>Coverage</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>GDPR</td><td>Art. 5, 15–22, 25, 30, 32, 33–34, 35 (DPIA)</td></tr>
+            <tr><td>CCPA / CPRA</td><td>Know · Delete · Correct · Opt-out · Limit SPI</td></tr>
+            <tr><td>DPDPA (India)</td><td>Notice · Consent · Rights · Breach reporting</td></tr>
+            <tr><td>HIPAA</td><td>Technical safeguards: encryption · audit · access</td></tr>
+            <tr><td>ISO 27001</td><td>Annex A · access, crypto, ops, supplier</td></tr>
+            <tr><td>SOC 2</td><td>CC6 · CC7 · CC8</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Slide 15 — Why Win -->
+      <section>
+        <h2>Why TechD Wins</h2>
+        <ol>
+          <li><span class="accent">Unified</span> — not five products stitched together</li>
+          <li><span class="accent">Queryable data graph</span> — not a static diagram</li>
+          <li><span class="accent">34 connectors</span> on a reliability-hardened SDK</li>
+          <li><span class="accent">Cryptographic audit chain</span> — tamper-evident by default</li>
+          <li><span class="accent">Production-primitive core</span> — Temporal, NATS, Prisma, OTel</li>
+          <li><span class="accent">DPDPA-ready</span> + GDPR / CCPA fidelity preserved</li>
+          <li><span class="accent">SRE-grade</span> — 952 tests · 26 metrics · timeouts everywhere</li>
+        </ol>
+      </section>
+
+      <!-- Slide 16 — Deployment -->
+      <section>
+        <h2>Deployment Options</h2>
+        <div class="three-col" style="margin-top: 1.5em;">
+          <div class="card">
+            <h3>Managed SaaS</h3>
+            Multi-tenant · Region-pinned (US / EU / IN) · Zero-ops
+          </div>
+          <div class="card">
+            <h3>Private Cloud</h3>
+            Single-tenant in your AWS / Azure / GCP · Full data sovereignty
+          </div>
+          <div class="card">
+            <h3>Hybrid</h3>
+            Managed control plane · Data plane in your VPC · Sensitive data never leaves
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 17 — Roadmap -->
+      <section>
+        <h2>Near-Term Roadmap</h2>
+        <div class="two-col" style="margin-top: 1em;">
+          <ul>
+            <li>DSAR Subject Portal (self-service intake)</li>
+            <li>Reports Engine — ROPA, DPIA, audit PDFs</li>
+            <li>DPDPA Regulation Pack (India)</li>
+          </ul>
+          <ul>
+            <li>Consent &amp; Cookie Intelligence UI</li>
+            <li>Policy &amp; Notice Generator</li>
+            <li>Wave 4 connectors (Wave 4: 10 more planned)</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 18 — Pilot CTA -->
+      <section>
+        <h2>30-Day Pilot</h2>
+        <div class="three-col" style="margin-top: 2em;">
+          <div><div class="metric">2</div><div class="metric-label">Connectors</div></div>
+          <div><div class="metric">1</div><div class="metric-label">Workflow</div></div>
+          <div><div class="metric">0</div><div class="metric-label">Risk</div></div>
+        </div>
+        <p class="muted" style="margin-top: 2em;">Guided proof-of-value · Success metrics defined up front · Data stays in your tenant</p>
+      </section>
+
+      <!-- Slide 19 — Close -->
+      <section class="hero">
+        <h1 class="section-title">Where Privacy Stops Being Paperwork</h1>
+        <h1 class="section-title">And Starts Being Proof.</h1>
+        <p class="muted" style="margin-top: 2em;">sales@techd.example</p>
+        <p class="muted">architecture@techd.example</p>
+        <div class="footer">TechD PrivacyOps + DSPM · 2026</div>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      slideNumber: 'c/t',
+      transition: 'slide',
+      controls: true,
+      progress: true,
+      plugins: [ RevealHighlight, RevealNotes ]
+    });
+  </script>
+</body>
+</html>

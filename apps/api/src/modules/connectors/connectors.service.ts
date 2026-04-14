@@ -134,18 +134,40 @@ export class ConnectorsService {
     return source;
   }
 
-  /** Decrypt connectionConfig for internal use (e.g., test/health). Never expose to API. */
+  /**
+   * Decrypt connectionConfig for internal use (e.g., test/health). Never
+   * expose to API.
+   *
+   * Plaintext fallback was REMOVED — any unparseable ciphertext is a
+   * migration failure and must raise an error rather than silently returning
+   * plaintext credentials. A legacy migration script should re-encrypt
+   * pre-existing rows out-of-band.
+   */
   private async decryptConfig(tenantId: string, encryptedConfig: any): Promise<any> {
-    if (!encryptedConfig || typeof encryptedConfig !== 'string') {
-      return encryptedConfig; // Legacy unencrypted config — backward compatible
-    }
-    try {
-      return await this.crypto.decryptJson(encryptedConfig, `tenant:${tenantId}`);
-    } catch {
-      // Fallback for legacy plaintext JSON configs during migration
-      this.logger.warn('Failed to decrypt connector config — may be legacy plaintext');
+    // Support migrating from legacy unencrypted object configs only when the
+    // ALLOW_LEGACY_PLAINTEXT_CONFIG env flag is set (used by the migration
+    // command). Production instances must never set this flag.
+    if (!encryptedConfig) {
       return encryptedConfig;
     }
+
+    if (typeof encryptedConfig !== 'string') {
+      if (process.env.ALLOW_LEGACY_PLAINTEXT_CONFIG === 'true') {
+        this.logger.warn(
+          'Accepting legacy plaintext connector config (ALLOW_LEGACY_PLAINTEXT_CONFIG is set)',
+        );
+        return encryptedConfig;
+      }
+      throw new Error(
+        'Connector config is not in encrypted format; run the re-encrypt migration',
+      );
+    }
+
+    // `string` format: must be a valid ciphertext envelope. Any decryption
+    // failure is fatal — we do NOT fall back to returning the raw string
+    // which would leak the (possibly sensitive) encrypted blob back through
+    // the internal API path as if it were plaintext.
+    return this.crypto.decryptJson(encryptedConfig, `tenant:${tenantId}`);
   }
 
   /** Strip credentials from connector objects before returning to API consumers */

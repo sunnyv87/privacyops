@@ -68,17 +68,20 @@ export class AuthController {
 
     // No MFA — create session and return tokens
     const payload = this.authService.buildPayloadFromUser(user);
+    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
     const sessionId = await this.sessionService.createSession(
       user.id,
       user.tenantId,
-      {
-        ip: req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
-        userAgent: req.headers['user-agent'] || 'unknown',
-        provider: 'local',
-      },
+      { ip, userAgent, provider: 'local' },
     );
 
-    const tokens = this.authService.generateTokens(payload, sessionId);
+    const deviceFingerprint = AuthService.deviceFingerprint(ip, userAgent);
+    const tokens = this.authService.generateTokens(
+      payload,
+      sessionId,
+      deviceFingerprint,
+    );
 
     return {
       ...tokens,
@@ -151,17 +154,21 @@ export class AuthController {
 
     // MFA verified — create session and return tokens
     const payload = this.authService.buildPayloadFromUser(user);
+    const mfaIp =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const mfaUa = req.headers['user-agent'] || 'unknown';
     const sessionId = await this.sessionService.createSession(
       user.id,
       user.tenantId,
-      {
-        ip: req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
-        userAgent: req.headers['user-agent'] || 'unknown',
-        provider: 'local',
-      },
+      { ip: mfaIp, userAgent: mfaUa, provider: 'local' },
     );
 
-    const tokens = this.authService.generateTokens(payload, sessionId);
+    const mfaFingerprint = AuthService.deviceFingerprint(mfaIp, mfaUa);
+    const tokens = this.authService.generateTokens(
+      payload,
+      sessionId,
+      mfaFingerprint,
+    );
 
     return {
       ...tokens,
@@ -184,8 +191,15 @@ export class AuthController {
     @Body() body: { refreshToken: string },
     @Req() req: Request,
   ) {
-    const { sub, tenantId, sid } =
-      await this.authService.validateRefreshToken(body.refreshToken);
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const fingerprint = AuthService.deviceFingerprint(ip, userAgent);
+
+    const { sub, sid } = await this.authService.validateRefreshToken(
+      body.refreshToken,
+      fingerprint,
+    );
 
     const user = await this.authService.validateUser(sub);
     const payload = this.authService.buildPayloadFromUser(user);
@@ -195,14 +209,14 @@ export class AuthController {
       sid,
       user.id,
       user.tenantId,
-      {
-        ip: req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
-        userAgent: req.headers['user-agent'] || 'unknown',
-        provider: 'local',
-      },
+      { ip, userAgent, provider: 'local' },
     );
 
-    const tokens = this.authService.generateTokens(payload, newSessionId);
+    const tokens = this.authService.generateTokens(
+      payload,
+      newSessionId,
+      fingerprint,
+    );
 
     return tokens;
   }
@@ -326,16 +340,20 @@ export class AuthController {
       await this.sessionService.revokeSession(user.sid);
     }
     const payload = this.authService.buildPayloadFromUser(dbUser);
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
     const newSessionId = await this.sessionService.createSession(
       user.id,
       user.tenantId,
-      {
-        ip: req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
-        userAgent: req.headers['user-agent'] || 'unknown',
-        provider: 'local',
-      },
+      { ip, userAgent, provider: 'local' },
     );
-    const tokens = this.authService.generateTokens(payload, newSessionId);
+    const fingerprint = AuthService.deviceFingerprint(ip, userAgent);
+    const tokens = this.authService.generateTokens(
+      payload,
+      newSessionId,
+      fingerprint,
+    );
 
     return {
       message: 'MFA enabled successfully',
@@ -395,18 +413,22 @@ export class AuthController {
   @ApiOperation({ summary: 'Handle OIDC callback' })
   async oidcCallback(@Req() req: Request) {
     const userPayload = req.user as JwtPayload;
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
 
     const sessionId = await this.sessionService.createSession(
       userPayload.sub,
       userPayload.tenantId,
-      {
-        ip: req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
-        userAgent: req.headers['user-agent'] || 'unknown',
-        provider: 'oidc',
-      },
+      { ip, userAgent, provider: 'oidc' },
     );
 
-    const tokens = this.authService.generateTokens(userPayload, sessionId);
+    const fingerprint = AuthService.deviceFingerprint(ip, userAgent);
+    const tokens = this.authService.generateTokens(
+      userPayload,
+      sessionId,
+      fingerprint,
+    );
 
     return {
       ...tokens,
@@ -435,18 +457,22 @@ export class AuthController {
   @ApiOperation({ summary: 'Handle SAML assertion callback' })
   async samlCallback(@Req() req: Request) {
     const userPayload = req.user as JwtPayload;
+    const ip =
+      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
 
     const sessionId = await this.sessionService.createSession(
       userPayload.sub,
       userPayload.tenantId,
-      {
-        ip: req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
-        userAgent: req.headers['user-agent'] || 'unknown',
-        provider: 'saml',
-      },
+      { ip, userAgent, provider: 'saml' },
     );
 
-    const tokens = this.authService.generateTokens(userPayload, sessionId);
+    const fingerprint = AuthService.deviceFingerprint(ip, userAgent);
+    const tokens = this.authService.generateTokens(
+      userPayload,
+      sessionId,
+      fingerprint,
+    );
 
     return {
       ...tokens,

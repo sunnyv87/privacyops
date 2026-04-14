@@ -130,6 +130,25 @@ export class ScimAuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid JWT payload for SCIM');
       }
 
+      // SCIM 2.0 endpoints provision and delete users; only principals
+      // holding the `scim:admin` permission (or platform admin) may invoke
+      // them. Without this check any authenticated user could provision
+      // arbitrary accounts, promote themselves, or delete all tenant users.
+      const permissions: string[] = payload.permissions || [];
+      const hasScimAccess =
+        permissions.includes('scim:admin') ||
+        permissions.includes('users:users:manage') ||
+        permissions.includes('platform:admin');
+
+      if (!hasScimAccess) {
+        this.logger.warn(
+          `SCIM JWT access denied: subject ${payload.sub} lacks scim:admin permission`,
+        );
+        throw new UnauthorizedException(
+          'SCIM access requires the scim:admin permission',
+        );
+      }
+
       await this.prisma.setTenantContext(payload.tenantId);
 
       request.tenantId = payload.tenantId;
@@ -138,7 +157,7 @@ export class ScimAuthGuard implements CanActivate {
         tenantId: payload.tenantId,
         email: payload.email,
         roles: payload.roles || [],
-        permissions: payload.permissions || [],
+        permissions,
       };
 
       return true;

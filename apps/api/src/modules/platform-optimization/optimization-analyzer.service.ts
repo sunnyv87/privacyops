@@ -220,24 +220,42 @@ export class OptimizationAnalyzer {
   // Apply a recommendation
   // ---------------------------------------------------------------------------
 
-  async applyRecommendation(id: string, userId: string) {
+  async applyRecommendation(id: string, tenantId: string, userId: string) {
+    // Tenant-scoped lookup: recommendations without a tenantId are
+    // platform-global and readable only by platform admins (controller
+    // enforces `platform:admin`).
     const recommendation =
-      await this.prisma.optimizationRecommendation.findUnique({
-        where: { id },
+      await this.prisma.optimizationRecommendation.findFirst({
+        where: {
+          id,
+          OR: [{ tenantId }, { tenantId: null }],
+        },
       });
 
     if (!recommendation) {
       throw new NotFoundException(`Recommendation ${id} not found`);
     }
 
-    const updated = await this.prisma.optimizationRecommendation.update({
-      where: { id },
+    const { count } = await this.prisma.optimizationRecommendation.updateMany({
+      where: {
+        id,
+        OR: [{ tenantId }, { tenantId: null }],
+      },
       data: {
         status: 'applied',
         appliedAt: new Date(),
         appliedBy: userId,
       },
     });
+
+    if (count === 0) {
+      throw new NotFoundException(`Recommendation ${id} not found`);
+    }
+
+    const updated =
+      await this.prisma.optimizationRecommendation.findUnique({
+        where: { id },
+      });
 
     await this.audit.log({
       tenantId: recommendation.tenantId || undefined,
@@ -270,24 +288,34 @@ export class OptimizationAnalyzer {
   // Revert a recommendation
   // ---------------------------------------------------------------------------
 
-  async revertRecommendation(id: string) {
+  async revertRecommendation(id: string, tenantId: string) {
     const recommendation =
-      await this.prisma.optimizationRecommendation.findUnique({
-        where: { id },
+      await this.prisma.optimizationRecommendation.findFirst({
+        where: {
+          id,
+          OR: [{ tenantId }, { tenantId: null }],
+        },
       });
 
     if (!recommendation) {
       throw new NotFoundException(`Recommendation ${id} not found`);
     }
 
-    const updated = await this.prisma.optimizationRecommendation.update({
-      where: { id },
+    const { count } = await this.prisma.optimizationRecommendation.updateMany({
+      where: {
+        id,
+        OR: [{ tenantId }, { tenantId: null }],
+      },
       data: {
         status: 'reverted',
       },
     });
 
-    return updated;
+    if (count === 0) {
+      throw new NotFoundException(`Recommendation ${id} not found`);
+    }
+
+    return this.prisma.optimizationRecommendation.findUnique({ where: { id } });
   }
 
   // ---------------------------------------------------------------------------

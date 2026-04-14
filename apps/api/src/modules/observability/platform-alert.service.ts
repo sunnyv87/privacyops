@@ -104,21 +104,32 @@ export class PlatformAlertService {
   // Acknowledge an alert
   // ---------------------------------------------------------------------------
 
-  async acknowledgeAlert(id: string, userId: string) {
-    const alert = await this.prisma.platformAlert.findUnique({
-      where: { id },
+  async acknowledgeAlert(id: string, tenantId: string, userId: string) {
+    // Tenant-scoped lookup. Platform-wide alerts (tenantId = null) are
+    // acknowledgeable only by platform-admin operators via a dedicated
+    // admin endpoint.
+    const alert = await this.prisma.platformAlert.findFirst({
+      where: { id, tenantId },
     });
 
     if (!alert) {
       throw new NotFoundException(`Alert ${id} not found`);
     }
 
-    const updated = await this.prisma.platformAlert.update({
-      where: { id },
+    const { count } = await this.prisma.platformAlert.updateMany({
+      where: { id, tenantId },
       data: {
         status: 'acknowledged',
         acknowledgedBy: userId,
       },
+    });
+
+    if (count === 0) {
+      throw new NotFoundException(`Alert ${id} not found`);
+    }
+
+    const updated = await this.prisma.platformAlert.findUnique({
+      where: { id },
     });
 
     await this.audit.log({
@@ -141,24 +152,28 @@ export class PlatformAlertService {
   // Resolve an alert
   // ---------------------------------------------------------------------------
 
-  async resolveAlert(id: string) {
-    const alert = await this.prisma.platformAlert.findUnique({
-      where: { id },
+  async resolveAlert(id: string, tenantId: string) {
+    const alert = await this.prisma.platformAlert.findFirst({
+      where: { id, tenantId },
     });
 
     if (!alert) {
       throw new NotFoundException(`Alert ${id} not found`);
     }
 
-    const updated = await this.prisma.platformAlert.update({
-      where: { id },
+    const { count } = await this.prisma.platformAlert.updateMany({
+      where: { id, tenantId },
       data: {
         status: 'resolved',
         resolvedAt: new Date(),
       },
     });
 
-    return updated;
+    if (count === 0) {
+      throw new NotFoundException(`Alert ${id} not found`);
+    }
+
+    return this.prisma.platformAlert.findUnique({ where: { id } });
   }
 
   // ---------------------------------------------------------------------------

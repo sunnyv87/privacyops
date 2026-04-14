@@ -25,7 +25,10 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
       clientSecret: config.get<string>('KEYCLOAK_CLIENT_SECRET'),
       callbackURL: '/api/v1/auth/oidc/callback',
       scope: 'openid profile email',
-    });
+      // PKCE protection against authorization-code interception.
+      pkce: true,
+      state: true,
+    } as any);
   }
 
   async validate(
@@ -36,6 +39,9 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
     try {
       const email =
         profile.emails?.[0]?.value || profile._json?.email;
+      const emailVerified =
+        profile._json?.email_verified === true ||
+        profile._json?.email_verified === 'true';
       const externalId = profile.id;
       const name =
         profile.displayName ||
@@ -46,13 +52,56 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
         return done(new Error('No email returned from OIDC provider'));
       }
 
-      // Lookup by externalId first, then by email
+      // Require the IdP to assert the email is verified — otherwise an
+      // attacker who controls an IdP account with an arbitrary email claim
+      // could take over an existing PrivacyOps account via email collision.
+      if (!emailVerified) {
+        this.logger.warn(
+          `OIDC login denied: email not verified by IdP for subject ${externalId}`,
+        );
+        return done(
+          new Error(
+            'Email address is not verified by your identity provider. Contact your administrator.',
+          ),
+        );
+      }
+
+      if (!externalId) {
+        return done(new Error('OIDC provider did not return a subject identifier'));
+      }
+
+      // Resolve tenant deterministically from the email domain BEFORE any
+      // user lookup. This ensures that all queries are tenant-scoped and
+      // prevents cross-tenant account matching via duplicate email.
+      const emailDomain = email.split('@')[1]?.toLowerCase();
+      if (!emailDomain) {
+        return done(new Error('Invalid email address from OIDC provider'));
+      }
+
+      const tenant = await this.prisma.tenant.findFirst({
+        where: { domain: emailDomain, status: 'active' },
+        select: { id: true },
+      });
+
+      if (!tenant) {
+        this.logger.warn(
+          `OIDC login denied: no active tenant with domain for subject ${externalId}`,
+        );
+        return done(
+          new Error(
+            'No tenant is configured for your email domain. Contact your administrator.',
+          ),
+        );
+      }
+
+      // Lookup by (externalId, authProvider, tenantId) only. Never match by
+      // email — otherwise an IdP compromise lets an attacker hijack any
+      // existing PrivacyOps account whose email matches the IdP claim.
       let user = await this.prisma.user.findFirst({
         where: {
-          OR: [
-            { externalId, authProvider: 'oidc' },
-            { email },
-          ],
+          tenantId: tenant.id,
+          externalId,
+          authProvider: 'oidc',
         },
         include: {
           userRoles: {
@@ -62,21 +111,23 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
       });
 
       if (!user) {
-        // Resolve tenant by email domain — never auto-assign to first tenant
-        const emailDomain = email.split('@')[1]?.toLowerCase();
-        if (!emailDomain) {
-          return done(new Error('Invalid email address from OIDC provider'));
-        }
-
-        const tenant = await this.prisma.tenant.findFirst({
-          where: { domain: emailDomain, status: 'active' },
+        // Check whether a local account with this email already exists in
+        // the tenant — if so, refuse auto-link and require manual admin
+        // linking to prevent takeover.
+        const conflict = await this.prisma.user.findFirst({
+          where: { tenantId: tenant.id, email },
+          select: { id: true, authProvider: true },
         });
 
-        if (!tenant) {
+        if (conflict) {
           this.logger.warn(
-            `OIDC auto-provisioning denied: no active tenant with domain "${emailDomain}" for user ${email}`,
+            `OIDC login denied: user with subject ${externalId} collides with existing local account in tenant ${tenant.id}`,
           );
-          return done(new Error(`No tenant configured for domain "${emailDomain}". Contact your administrator.`));
+          return done(
+            new Error(
+              'An account with this email already exists. Contact your administrator to link your SSO account.',
+            ),
+          );
         }
 
         user = await this.prisma.user.create({
@@ -84,7 +135,7 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
             tenantId: tenant.id,
             email,
             name,
-            status: 'active',
+            isActive: true,
             authProvider: 'oidc',
             externalId,
           },
@@ -95,27 +146,11 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
           },
         });
 
-        this.logger.log(`Provisioned new OIDC user: ${email} (${user.id})`);
-      } else if (!user.externalId) {
-        // Do NOT auto-link existing accounts by email — requires admin action
-        // to prevent account takeover via OIDC provider email impersonation
-        this.logger.warn(
-          `OIDC login denied: user ${email} exists but is not linked to OIDC. Admin must link the account manually.`,
-        );
-        return done(new Error('Account exists but is not linked to OIDC. Contact your administrator to link your account.'));
-      } else if (false) {
-        // Kept for reference — manual linking should use a dedicated admin endpoint
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            externalId,
-            authProvider: 'oidc',
-          },
-          include: {
-            userRoles: {
-              include: { role: true },
-            },
-          },
+        this.logger.log({
+          message: 'OIDC user provisioned',
+          subject: externalId,
+          tenantId: tenant.id,
+          userId: user.id,
         });
       }
 

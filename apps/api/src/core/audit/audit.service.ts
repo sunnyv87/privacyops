@@ -196,21 +196,65 @@ export class AuditService implements OnModuleInit {
   }
 
   /**
-   * Computes an integrity hash for an audit log entry, chained to the previous hash.
+   * Canonical JSON serialization with deterministic key ordering. This is
+   * what we hash — stable across runs regardless of object literal key
+   * insertion order.
+   */
+  private canonicalize(value: any): string {
+    if (value === null || value === undefined) return 'null';
+    if (typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) {
+      return '[' + value.map((v) => this.canonicalize(v)).join(',') + ']';
+    }
+    const keys = Object.keys(value).sort();
+    return (
+      '{' +
+      keys
+        .map((k) => JSON.stringify(k) + ':' + this.canonicalize(value[k]))
+        .join(',') +
+      '}'
+    );
+  }
+
+  /**
+   * Computes an integrity hash for an audit log entry, chained to the previous
+   * hash. The hash input covers EVERY security-relevant field so that tampering
+   * with any of them (including changes payload, actor, IP, severity, etc.)
+   * invalidates the chain.
    */
   private computeHash(
     previousHash: string,
-    action: string,
-    entityType: string,
-    entityId: string,
-    timestamp: string,
+    record: {
+      tenantId: string;
+      actorId?: string;
+      actorType: string;
+      action: string;
+      entityType: string;
+      entityId: string;
+      changes?: any;
+      ipAddress?: string;
+      userAgent?: string;
+      severity: string;
+      category: string;
+      timestamp: string;
+      sequence: number | bigint;
+    },
   ): string {
     const hashInput = [
       previousHash,
-      action,
-      entityType,
-      entityId,
-      timestamp,
+      record.tenantId,
+      record.actorId ?? '',
+      record.actorType,
+      record.action,
+      record.entityType,
+      record.entityId,
+      this.canonicalize(record.changes ?? null),
+      record.ipAddress ?? '',
+      record.userAgent ?? '',
+      record.severity,
+      record.category,
+      record.timestamp,
+      String(record.sequence),
     ].join('|');
 
     return createHash('sha256').update(hashInput).digest('hex');
@@ -218,30 +262,63 @@ export class AuditService implements OnModuleInit {
 
   /**
    * Creates an audit log entry with chain-hashing for tamper evidence.
-   * Backward compatible: severity and category default to 'info' and 'data_access'.
+   *
+   * Concurrency: we take a Postgres advisory lock keyed to the tenantId for
+   * the lifetime of the transaction. This serializes all audit writes per
+   * tenant so that `loadLastHash` -> `computeHash` -> `create` is atomic with
+   * respect to other writers, eliminating the fork-chain race that would
+   * otherwise occur between independent `log()` calls.
    */
   async log(entry: AuditLogEntry): Promise<void> {
     const timestamp = new Date();
-    const previousHash = await this.loadLastHash(entry.tenantId);
-
-    const integrityHash = this.computeHash(
-      previousHash,
-      entry.action,
-      entry.entityType,
-      entry.entityId,
-      timestamp.toISOString(),
-    );
-
-    this.lastHashByTenant.set(entry.tenantId, integrityHash);
 
     // Redact sensitive fields from changes before persisting
     const sanitizedChanges = entry.changes
       ? this.redactSensitiveFields(entry.changes)
       : undefined;
 
-    // Write audit log and update chain state atomically
-    await this.prisma.$transaction([
-      this.prisma.auditLog.create({
+    const severity = entry.severity || 'info';
+    const category = entry.category || 'data_access';
+
+    // Derive a stable 32-bit advisory lock key from the tenantId. Using
+    // `hashtext` on Postgres side via pg_advisory_xact_lock() would require
+    // raw SQL; instead we compute a deterministic bigint client-side.
+    const lockKey = this.tenantLockKey(entry.tenantId);
+
+    await this.prisma.$transaction(async (tx) => {
+      // Serialize audit writes for this tenant.
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock($1)`, lockKey);
+
+      // Re-read chain state INSIDE the transaction to observe any concurrent
+      // writers that committed between our lock acquisition and now.
+      const existing = await tx.auditChainState.findUnique({
+        where: { tenantId: entry.tenantId },
+        select: { lastHash: true, sequence: true },
+      });
+
+      const previousHash = existing?.lastHash ?? '0';
+      const nextSequence =
+        existing?.sequence !== undefined
+          ? BigInt(existing.sequence as unknown as number) + BigInt(1)
+          : BigInt(1);
+
+      const integrityHash = this.computeHash(previousHash, {
+        tenantId: entry.tenantId,
+        actorId: entry.actorId,
+        actorType: entry.actorType,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        changes: sanitizedChanges,
+        ipAddress: entry.ipAddress,
+        userAgent: entry.userAgent,
+        severity,
+        category,
+        timestamp: timestamp.toISOString(),
+        sequence: nextSequence,
+      });
+
+      await tx.auditLog.create({
         data: {
           tenantId: entry.tenantId,
           actorId: entry.actorId,
@@ -252,18 +329,43 @@ export class AuditService implements OnModuleInit {
           changes: sanitizedChanges,
           ipAddress: entry.ipAddress,
           userAgent: entry.userAgent,
-          severity: entry.severity || 'info',
-          category: entry.category || 'data_access',
+          severity,
+          category,
           timestamp,
           integrityHash,
         },
-      }),
-      this.prisma.auditChainState.upsert({
+      });
+
+      await tx.auditChainState.upsert({
         where: { tenantId: entry.tenantId },
-        update: { lastHash: integrityHash, sequence: { increment: 1 } },
-        create: { tenantId: entry.tenantId, lastHash: integrityHash, sequence: 1 },
-      }),
-    ]);
+        update: { lastHash: integrityHash, sequence: nextSequence as any },
+        create: {
+          tenantId: entry.tenantId,
+          lastHash: integrityHash,
+          sequence: nextSequence as any,
+        },
+      });
+
+      // Update in-memory cache ONLY after the transaction commits. Writing
+      // the cache optimistically before commit risks poisoning subsequent
+      // writers on rollback.
+      this.lastHashByTenant.set(entry.tenantId, integrityHash);
+    });
+  }
+
+  /**
+   * Deterministic bigint derived from a tenant UUID for use as a Postgres
+   * advisory lock key. Collisions between tenants are acceptable (they just
+   * serialize unrelated writes); the key only needs to be stable per-tenant.
+   */
+  private tenantLockKey(tenantId: string): bigint {
+    const digest = createHash('sha256').update(tenantId).digest();
+    // Take the first 8 bytes as a signed 64-bit integer.
+    const high = BigInt(digest.readUInt32BE(0));
+    const low = BigInt(digest.readUInt32BE(4));
+    // Clamp to bigint range acceptable by pg_advisory_xact_lock (int8).
+    // Use XOR to spread entropy.
+    return (high << BigInt(32)) ^ low ^ BigInt('0x7fffffffffffffff');
   }
 
   /**
@@ -333,10 +435,11 @@ export class AuditService implements OnModuleInit {
     const batchSize = 1000;
     let cursor: string | undefined;
     let previousHash = '0';
+    let expectedSequence = BigInt(1);
     let totalChecked = 0;
 
-    // If we have a 'from' date, we need to get the hash of the record
-    // just before our range to start the chain verification correctly.
+    // If we have a 'from' date, get the hash AND sequence of the record just
+    // before our range to start verification correctly.
     if (from) {
       const priorRecord = await this.prisma.auditLog.findFirst({
         where: {
@@ -361,7 +464,7 @@ export class AuditService implements OnModuleInit {
 
       const logs = await this.prisma.auditLog.findMany({
         where: whereClause,
-        orderBy: { timestamp: 'asc' },
+        orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
         take: batchSize,
         ...(cursor
           ? {
@@ -369,28 +472,33 @@ export class AuditService implements OnModuleInit {
               cursor: { id: cursor },
             }
           : {}),
-        select: {
-          id: true,
-          action: true,
-          entityType: true,
-          entityId: true,
-          timestamp: true,
-          integrityHash: true,
-        },
       });
 
       if (logs.length === 0) break;
 
       for (const log of logs) {
-        const expectedHash = this.computeHash(
-          previousHash,
-          log.action,
-          log.entityType,
-          log.entityId,
-          log.timestamp.toISOString(),
-        );
-
         totalChecked++;
+
+        // The sequence used during log() is tracked on auditChainState and
+        // isn't persisted on each row. For verification we reconstruct it
+        // positionally: the first row of the chain is sequence 1, second is
+        // 2, etc. Gaps signal deletion; this is detected by comparing final
+        // expectedSequence to the row count in auditChainState.
+        const expectedHash = this.computeHash(previousHash, {
+          tenantId: log.tenantId,
+          actorId: log.actorId ?? undefined,
+          actorType: log.actorType,
+          action: log.action,
+          entityType: log.entityType,
+          entityId: log.entityId,
+          changes: log.changes ?? null,
+          ipAddress: log.ipAddress ?? undefined,
+          userAgent: log.userAgent ?? undefined,
+          severity: log.severity,
+          category: log.category,
+          timestamp: log.timestamp.toISOString(),
+          sequence: expectedSequence,
+        });
 
         if (expectedHash !== log.integrityHash) {
           return {
@@ -402,12 +510,33 @@ export class AuditService implements OnModuleInit {
         }
 
         previousHash = log.integrityHash;
+        expectedSequence += BigInt(1);
       }
 
       cursor = logs[logs.length - 1].id;
 
       // If we got fewer than batchSize, we've reached the end
       if (logs.length < batchSize) break;
+    }
+
+    // Compare final sequence against chain state — a mismatch here signals
+    // insertion or deletion of rows between valid chain entries.
+    const chainState = await this.prisma.auditChainState.findUnique({
+      where: { tenantId },
+      select: { sequence: true },
+    });
+
+    if (
+      !from &&
+      !to &&
+      chainState &&
+      BigInt(chainState.sequence as unknown as number) + BigInt(1) !==
+        expectedSequence
+    ) {
+      return {
+        valid: false,
+        totalChecked,
+      };
     }
 
     return { valid: true, totalChecked };

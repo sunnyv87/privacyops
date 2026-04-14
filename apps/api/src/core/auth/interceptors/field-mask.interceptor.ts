@@ -44,6 +44,39 @@ export interface FieldMaskRule {
 // FieldMaskInterceptor
 // ============================================================================
 
+/**
+ * Fields that are ALWAYS stripped from every outbound response,
+ * regardless of whether the route carries `@MaskFields()`. This is the
+ * fail-closed guarantee: if a developer forgets the decorator on a new
+ * endpoint, sensitive credentials are still removed. Service-layer
+ * queries should still use `select` whitelists; this interceptor is the
+ * belt-and-braces backstop.
+ *
+ * Deletions are keyed by field name and walk every nested plain object
+ * in the response tree — so `{ user: { passwordHash: '…' } }` is
+ * scrubbed identically to a bare user object.
+ */
+const ALWAYS_STRIPPED_FIELDS: ReadonlySet<string> = new Set([
+  'passwordHash',
+  'password_hash',
+  'mfaSecret',
+  'mfa_secret',
+  'mfaRecoveryCodes',
+  'mfa_recovery_codes',
+  'apiKeyHash',
+  'api_key_hash',
+  'hashedRefreshToken',
+  'hashed_refresh_token',
+  'resetPasswordToken',
+  'reset_password_token',
+  'secretKey',
+  'secret_key',
+  'privateKey',
+  'private_key',
+  'clientSecret',
+  'client_secret',
+]);
+
 @Injectable()
 export class FieldMaskInterceptor implements NestInterceptor {
   private readonly logger = new Logger(FieldMaskInterceptor.name);
@@ -98,37 +131,72 @@ export class FieldMaskInterceptor implements NestInterceptor {
       [context.getHandler(), context.getClass()],
     );
 
-    // If no @MaskFields decorator, pass through without masking
-    if (!entityType) {
-      return next.handle();
-    }
-
     const request = context.switchToHttp().getRequest();
     const userPermissions: string[] = request.user?.permissions || [];
 
-    // Determine which rules apply
-    const applicableRules =
-      entityType === '*'
+    // Determine which permission-gated rules apply (if any)
+    const applicableRules = entityType
+      ? entityType === '*'
         ? this.rules
-        : this.rules.filter((r) => r.entityType === entityType);
+        : this.rules.filter((r) => r.entityType === entityType)
+      : [];
 
-    // Determine which rules need masking (user lacks the required permission)
     const rulesToApply = applicableRules.filter((rule) => {
       if (rule.requiredPermission === null) return true; // always mask
       return !this.hasPermission(userPermissions, rule.requiredPermission);
     });
 
-    // If no rules need applying, pass through
-    if (rulesToApply.length === 0) {
-      return next.handle();
-    }
-
+    // Fail-closed: even if no @MaskFields decorator was set and no
+    // explicit rules match, we ALWAYS run the global sensitive-field
+    // stripper so credentials can never leak from a forgotten
+    // annotation. The stripper is a cheap deep walk; for large
+    // responses it's dominated by the existing JSON serialisation cost.
     return next.handle().pipe(
       map((data) => {
         if (data == null) return data;
-        return this.applyMasking(data, rulesToApply);
+        let result = data;
+        if (rulesToApply.length > 0) {
+          result = this.applyMasking(result, rulesToApply);
+        }
+        result = this.stripAlwaysSensitive(result);
+        return result;
       }),
     );
+  }
+
+  /**
+   * Walk the response payload and delete any key matching the
+   * always-stripped set. This runs AFTER the rule-driven masking pass
+   * so it catches fields the configured rules may have missed.
+   */
+  private stripAlwaysSensitive(data: any, seen = new WeakSet()): any {
+    if (data == null || typeof data !== 'object') return data;
+    if (seen.has(data)) return data;
+    seen.add(data);
+
+    if (Array.isArray(data)) {
+      for (const item of data) this.stripAlwaysSensitive(item, seen);
+      return data;
+    }
+
+    for (const key of Object.keys(data)) {
+      if (ALWAYS_STRIPPED_FIELDS.has(key)) {
+        delete data[key];
+        continue;
+      }
+      const value = data[key];
+      if (value != null && typeof value === 'object') {
+        // Do not traverse Date / Buffer / Prisma Decimal / etc.
+        if (
+          value.constructor === Object ||
+          value.constructor === undefined ||
+          Array.isArray(value)
+        ) {
+          this.stripAlwaysSensitive(value, seen);
+        }
+      }
+    }
+    return data;
   }
 
   /**

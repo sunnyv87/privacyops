@@ -13,8 +13,17 @@ import { IS_PUBLIC_KEY } from '../auth/decorators/public.decorator';
  * CSRF protection guard that validates Origin/Referer headers on
  * state-changing requests (POST, PUT, PATCH, DELETE).
  *
- * This prevents cross-origin form submissions and fetch requests
- * from untrusted origins, even when credentials: true is set in CORS.
+ * Security model:
+ *  - Browsers always send Origin on CORS-enabled fetch/XHR and on all
+ *    POST/PUT/DELETE. Requiring a positive match on Origin blocks
+ *    cross-origin form submissions even when `credentials: include` is set.
+ *  - Server-to-server clients (Python scripts, CI jobs, terraform, etc.)
+ *    authenticate with X-API-Key tokens, which are sensitive-action
+ *    credentials themselves — we still require an explicit
+ *    `X-Requested-With: XMLHttpRequest` custom header OR a valid API key
+ *    AND that the guard is invoked on a non-cookie-authenticated request.
+ *    The combination eliminates the CSRF attack vector (browsers cannot
+ *    send arbitrary custom headers cross-origin without a preflight).
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {
@@ -26,34 +35,33 @@ export class CsrfGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly config: ConfigService,
   ) {
-    const origins = this.config.get<string>('CORS_ORIGINS', 'http://localhost:3000');
-    this.allowedOrigins = new Set(origins.split(',').map((o) => o.trim()));
+    const raw = this.config.get<string>('CORS_ORIGINS', 'http://localhost:3000');
+    this.allowedOrigins = new Set(
+      raw
+        .split(',')
+        .map((o) => o.trim())
+        .filter((o) => o.length > 0),
+    );
   }
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
 
-    // Safe methods don't need CSRF checks
+    // Safe methods are idempotent and unable to modify server state.
     if (this.safeMethods.has(request.method)) {
-      return true;
-    }
-
-    // API key authenticated requests are not subject to CSRF
-    if (request.headers['x-api-key']) {
       return true;
     }
 
     const origin = request.headers['origin'];
     const referer = request.headers['referer'];
+    const hasApiKey = !!request.headers['x-api-key'];
+    const hasCustomHeader =
+      request.headers['x-requested-with'] ||
+      request.headers['x-csrf-token'];
 
-    // If neither Origin nor Referer is present, the request likely comes from
-    // a non-browser client (e.g., curl, Postman, server-to-server).
-    // Allow these through since CSRF is a browser-only attack vector.
-    if (!origin && !referer) {
-      return true;
-    }
-
-    // Validate Origin header (preferred)
+    // Positive Origin validation takes precedence — if present, it must
+    // match an allowed origin. This is the strongest signal and is not
+    // spoofable from a browser cross-origin.
     if (origin) {
       if (this.allowedOrigins.has(origin)) {
         return true;
@@ -64,15 +72,15 @@ export class CsrfGuard implements CanActivate {
       throw new ForbiddenException('Invalid request origin');
     }
 
-    // Fall back to Referer header
+    // Fall back to Referer header for clients that strip Origin.
     if (referer) {
       try {
-        const refererOrigin = new URL(referer).origin;
+        const refererOrigin = new URL(String(referer)).origin;
         if (this.allowedOrigins.has(refererOrigin)) {
           return true;
         }
       } catch {
-        // Malformed referer
+        // Malformed referer -> reject.
       }
       this.logger.warn(
         `CSRF blocked: referer "${referer}" not from allowed origin`,
@@ -80,6 +88,19 @@ export class CsrfGuard implements CanActivate {
       throw new ForbiddenException('Invalid request origin');
     }
 
-    return true;
+    // No Origin AND no Referer. Allow ONLY non-browser clients that have
+    // presented an API key (server-to-server) OR a custom header (which
+    // cross-origin fetch cannot send without a preflight that we would
+    // reject at the CORS layer).
+    if (hasApiKey || hasCustomHeader) {
+      return true;
+    }
+
+    this.logger.warn(
+      `CSRF blocked: ${request.method} ${request.url} missing Origin/Referer/API key`,
+    );
+    throw new ForbiddenException(
+      'Missing Origin header; cross-site request blocked',
+    );
   }
 }

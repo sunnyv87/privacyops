@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from './services/session.service';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 
 export interface JwtPayload {
   sub: string; // user ID
@@ -53,22 +54,26 @@ export class AuthService {
     password: string,
     tenantSlug?: string,
   ): Promise<any> {
-    const whereClause: any = { email };
+    // Tenant scope is mandatory. Without it, a user whose email happens to
+    // collide with a user in another tenant could authenticate into the
+    // wrong tenant — the previous behaviour of `findFirst` returning a
+    // non-deterministic row was a cross-tenant confused-deputy bug.
+    if (!tenantSlug || typeof tenantSlug !== 'string' || tenantSlug.length === 0) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
-    // If tenantSlug provided, resolve tenant first
-    if (tenantSlug) {
-      const tenant = await this.prisma.tenant.findUnique({
-        where: { slug: tenantSlug },
-      });
-      if (!tenant) {
-        throw new UnauthorizedException('Invalid credentials');
-      }
-      whereClause.tenantId = tenant.id;
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      select: { id: true, status: true },
+    });
+    if (!tenant || tenant.status !== 'active') {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const user = await this.prisma.user.findFirst({
       where: {
-        ...whereClause,
+        tenantId: tenant.id,
+        email,
         authProvider: 'local',
         deletedAt: null,
       },
@@ -148,9 +153,23 @@ export class AuthService {
     });
   }
 
+  /**
+   * Produces a short-lived device fingerprint hash from the client IP and
+   * User-Agent. A refresh token is bound to this fingerprint so it cannot
+   * be replayed from an unrelated host.
+   */
+  static deviceFingerprint(ip: string, userAgent: string): string {
+    const salt = process.env.DEVICE_BINDING_SALT || 'privacyops-dev-binding';
+    return createHash('sha256')
+      .update(`${ip}|${userAgent}|${salt}`)
+      .digest('hex')
+      .slice(0, 32);
+  }
+
   generateTokens(
     payload: JwtPayload,
     sessionId: string,
+    deviceFingerprint?: string,
   ): { accessToken: string; refreshToken: string } {
     const accessTokenPayload = { ...payload, sid: sessionId };
     const refreshTokenPayload = {
@@ -158,6 +177,7 @@ export class AuthService {
       tenantId: payload.tenantId,
       sid: sessionId,
       type: 'refresh',
+      ...(deviceFingerprint ? { dfp: deviceFingerprint } : {}),
     };
 
     const accessToken = this.jwt.sign(accessTokenPayload, {
@@ -180,6 +200,7 @@ export class AuthService {
 
   async validateRefreshToken(
     token: string,
+    requestFingerprint: string,
   ): Promise<{ sub: string; tenantId: string; sid: string }> {
     const payload = this.verifyToken(token);
 
@@ -191,10 +212,32 @@ export class AuthService {
       throw new UnauthorizedException('Token missing session reference');
     }
 
+    // Refresh tokens issued before device binding existed are rejected —
+    // the user must re-authenticate to obtain a bound token.
+    if (!payload.dfp) {
+      throw new UnauthorizedException('Refresh token missing device binding');
+    }
+
+    if (payload.dfp !== requestFingerprint) {
+      // Reuse-family kill: a fingerprint mismatch is the strongest signal of
+      // token theft. Revoke the entire session chain and force re-auth.
+      await this.sessionService.revokeSession(payload.sid);
+      this.logger.warn(
+        `Refresh token device binding mismatch for session ${payload.sid} — session revoked`,
+      );
+      throw new UnauthorizedException('Refresh token rejected: device mismatch');
+    }
+
     // Verify session still exists in Redis
     const session = await this.sessionService.getSession(payload.sid);
     if (!session) {
       throw new UnauthorizedException('Session has been revoked');
+    }
+
+    // Additional defense: session must belong to the claimed subject.
+    if (session.userId && session.userId !== payload.sub) {
+      await this.sessionService.revokeSession(payload.sid);
+      throw new UnauthorizedException('Session/subject mismatch');
     }
 
     return { sub: payload.sub, tenantId: payload.tenantId, sid: payload.sid };

@@ -89,17 +89,21 @@ export class ObservabilityController {
   @ApiOperation({ summary: 'Acknowledge a platform alert' })
   async acknowledgeAlert(
     @Param('id') id: string,
+    @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
   ) {
-    const alert = await this.platformAlert.acknowledgeAlert(id, userId);
+    const alert = await this.platformAlert.acknowledgeAlert(id, tenantId, userId);
     return { data: alert };
   }
 
   @Patch('alerts/:id/resolve')
   @RequirePermissions('observability:admin')
   @ApiOperation({ summary: 'Resolve a platform alert' })
-  async resolveAlert(@Param('id') id: string) {
-    const alert = await this.platformAlert.resolveAlert(id);
+  async resolveAlert(
+    @Param('id') id: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const alert = await this.platformAlert.resolveAlert(id, tenantId);
     return { data: alert };
   }
 

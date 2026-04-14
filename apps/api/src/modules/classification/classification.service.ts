@@ -1,9 +1,18 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { Classifier, ClassificationPattern } from './engine/classifier';
 import { SchemaHeuristicsEngine } from './engine/schema-heuristics';
+import {
+  validateAndCompileRegex,
+  UnsafeRegexError,
+} from '@/core/security/safe-regex';
 import {
   ClassifyAssetDto,
   CreateLabelDto,
@@ -45,17 +54,39 @@ export class ClassificationService {
       },
     });
 
-    // Convert labels to classifier patterns
+    // Convert labels to classifier patterns. Regex patterns are
+    // defensively re-validated at compile time (even though they were
+    // validated on create) because legacy rows may predate the ReDoS
+    // guard; any unsafe source is dropped with a warning so a single
+    // bad pattern cannot poison the whole classification run. This is
+    // safe *only* because the pattern came from an admin-controlled
+    // label store — if this code ever accepts regexes from untrusted
+    // sources it must switch to hard-rejecting the label entirely.
     const patterns: ClassificationPattern[] = labels.map((label) => {
       const detectionPatterns = (label.detectionPatterns as any) || {};
+      const regexSources: string[] = Array.isArray(detectionPatterns.regex)
+        ? detectionPatterns.regex
+        : [];
+      const regexPatterns: RegExp[] = [];
+      for (const source of regexSources) {
+        try {
+          regexPatterns.push(validateAndCompileRegex(source, 'i'));
+        } catch (err) {
+          if (err instanceof UnsafeRegexError) {
+            this.logger.warn(
+              `Dropping unsafe regex from label ${label.id} (${label.name}): ${err.reason}`,
+            );
+            continue;
+          }
+          throw err;
+        }
+      }
       return {
         labelId: label.id,
         labelName: label.name,
         category: label.category,
         sensitivityLevel: label.sensitivityLevel,
-        regexPatterns: (detectionPatterns.regex || []).map(
-          (r: string) => new RegExp(r, 'i'),
-        ),
+        regexPatterns,
         keywords: detectionPatterns.keywords || [],
       };
     });
@@ -306,6 +337,24 @@ export class ClassificationService {
   }
 
   async createLabel(tenantId: string, actorId: string, dto: CreateLabelDto) {
+    // ReDoS defense: every user-supplied regex must pass the static
+    // safety analyzer before it is persisted. We hard-reject the whole
+    // request on the first unsafe entry so the caller sees a clear
+    // validation error instead of silently losing patterns.
+    const rawPatterns: string[] = Array.isArray(dto.patterns) ? dto.patterns : [];
+    for (const source of rawPatterns) {
+      try {
+        validateAndCompileRegex(source, 'i');
+      } catch (err) {
+        if (err instanceof UnsafeRegexError) {
+          throw new BadRequestException(
+            `Invalid detection pattern "${source.slice(0, 64)}": ${err.reason}`,
+          );
+        }
+        throw err;
+      }
+    }
+
     const label = await this.prisma.classificationLabel.create({
       data: {
         tenantId,
@@ -314,7 +363,7 @@ export class ClassificationService {
         sensitivityLevel: dto.sensitivityLevel,
         description: dto.description,
         detectionPatterns: {
-          regex: dto.patterns || [],
+          regex: rawPatterns,
           keywords: dto.keywords || [],
         },
         isSystem: false,

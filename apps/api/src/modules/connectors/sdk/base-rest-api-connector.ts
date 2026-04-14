@@ -9,6 +9,12 @@ import {
   ConnectorMetadata,
 } from '../interfaces/connector.interface';
 import { BaseConnector } from './base-connector';
+import { UrlGuardService } from '@/core/security/url-guard.service';
+
+// Shared URL guard singleton. Connectors are instantiated by the connector
+// factory outside the NestJS DI graph, so we use a module-level instance
+// rather than injecting. The service has no internal state so this is safe.
+const urlGuard = new UrlGuardService();
 
 export type PaginationStyle = 'offset' | 'cursor' | 'link_header' | 'odata_next';
 
@@ -73,6 +79,15 @@ export abstract class BaseRestApiConnector extends BaseConnector {
         }
       }
 
+      // SSRF defense: validate the resolved IP is routable before attaching
+      // auth headers and dispatching. The tenant controls baseUrl, so we
+      // must reject metadata/private/loopback targets to prevent credential
+      // exfiltration or internal pivoting.
+      await urlGuard.assertSafe(url.toString(), {
+        allowedSchemes: ['https:', 'http:'],
+        allowedPorts: [80, 443, 8080, 8443],
+      });
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -84,6 +99,8 @@ export abstract class BaseRestApiConnector extends BaseConnector {
         method,
         headers,
         body: options?.body ? JSON.stringify(options.body) : undefined,
+        // Reject cross-host redirects; they bypass SSRF checks.
+        redirect: 'manual',
       });
 
       if (!resp.ok) {
@@ -173,6 +190,15 @@ export abstract class BaseRestApiConnector extends BaseConnector {
     clientSecret: string,
     scopes?: string[],
   ): Promise<void> {
+    // SSRF defense: the tokenUrl is tenant-supplied. Without validation an
+    // attacker could point it at 169.254.169.254 to capture cloud metadata
+    // credentials or at an internal service to use the client_secret as a
+    // credential against an unrelated system.
+    await urlGuard.assertSafe(tokenUrl, {
+      allowedSchemes: ['https:'],
+      allowedPorts: [443],
+    });
+
     const params = new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: clientId,
@@ -184,6 +210,7 @@ export abstract class BaseRestApiConnector extends BaseConnector {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
+      redirect: 'manual',
     });
 
     if (!resp.ok) {

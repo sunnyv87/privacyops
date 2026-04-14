@@ -26,6 +26,12 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
       ),
       wantAssertionsSigned: true,
       wantAuthnResponseSigned: true,
+      // Require signed logout requests — prevents unauthenticated logout.
+      wantLogoutRequestsSigned: true,
+      // Disable signature wrapping attack vectors.
+      disableRequestedAuthnContext: false,
+      // Enforce audience restriction validation.
+      audience: config.get<string>('SAML_AUDIENCE', 'privacyops-sp'),
     });
   }
 
@@ -48,13 +54,41 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
         return done(new Error('No nameID in SAML assertion'));
       }
 
-      // Lookup by externalId (nameID) or email
+      if (!email || typeof email !== 'string') {
+        return done(new Error('No email in SAML assertion'));
+      }
+
+      const emailDomain = email.split('@')[1]?.toLowerCase();
+      if (!emailDomain) {
+        return done(new Error('Invalid email address from SAML assertion'));
+      }
+
+      // Resolve tenant deterministically BEFORE any user lookup so that every
+      // query is tenant-scoped and cross-tenant matching is impossible.
+      const tenant = await this.prisma.tenant.findFirst({
+        where: { domain: emailDomain, status: 'active' },
+        select: { id: true },
+      });
+
+      if (!tenant) {
+        this.logger.warn(
+          `SAML login denied: no active tenant for subject ${nameID}`,
+        );
+        return done(
+          new Error(
+            'No tenant is configured for your email domain. Contact your administrator.',
+          ),
+        );
+      }
+
+      // Lookup strictly by (externalId, authProvider, tenantId). Never match
+      // by email — otherwise a compromised SAML IdP could assert any email
+      // and take over existing accounts.
       let user = await this.prisma.user.findFirst({
         where: {
-          OR: [
-            { externalId: nameID, authProvider: 'saml' },
-            { email },
-          ],
+          tenantId: tenant.id,
+          externalId: nameID,
+          authProvider: 'saml',
         },
         include: {
           userRoles: {
@@ -64,21 +98,20 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
       });
 
       if (!user) {
-        // Resolve tenant by email domain — never auto-assign to first tenant
-        const emailDomain = email.split('@')[1]?.toLowerCase();
-        if (!emailDomain) {
-          return done(new Error('Invalid email address from SAML assertion'));
-        }
-
-        const tenant = await this.prisma.tenant.findFirst({
-          where: { domain: emailDomain, status: 'active' },
+        const conflict = await this.prisma.user.findFirst({
+          where: { tenantId: tenant.id, email },
+          select: { id: true },
         });
 
-        if (!tenant) {
+        if (conflict) {
           this.logger.warn(
-            `SAML auto-provisioning denied: no active tenant with domain "${emailDomain}" for user ${email}`,
+            `SAML login denied: subject ${nameID} collides with existing local account in tenant ${tenant.id}`,
           );
-          return done(new Error(`No tenant configured for domain "${emailDomain}". Contact your administrator.`));
+          return done(
+            new Error(
+              'An account with this email already exists. Contact your administrator to link your SSO account.',
+            ),
+          );
         }
 
         user = await this.prisma.user.create({
@@ -86,7 +119,7 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
             tenantId: tenant.id,
             email,
             name,
-            status: 'active',
+            isActive: true,
             authProvider: 'saml',
             externalId: nameID,
           },
@@ -97,13 +130,12 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
           },
         });
 
-        this.logger.log(`Provisioned new SAML user: ${email} (${user.id})`);
-      } else if (!user.externalId) {
-        // Do NOT auto-link existing accounts by email — requires admin action
-        this.logger.warn(
-          `SAML login denied: user ${email} exists but is not linked to SAML. Admin must link the account manually.`,
-        );
-        return done(new Error('Account exists but is not linked to SAML. Contact your administrator to link your account.'));
+        this.logger.log({
+          message: 'SAML user provisioned',
+          subject: nameID,
+          tenantId: tenant.id,
+          userId: user.id,
+        });
       }
 
       const roles = user.userRoles.map((ur: any) => ur.role.slug);

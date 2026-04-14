@@ -21,8 +21,18 @@ export class CryptoService {
   /**
    * Encrypt a plaintext string using envelope encryption.
    * Returns base64-encoded: {iv}:{authTag}:{encryptedDataKey}:{ciphertext}
+   *
+   * Optional `aad` parameter binds the ciphertext to an out-of-band context
+   * string (e.g., `tenant:<uuid>`, `user:<id>:mfaSecret`). The AAD is not
+   * written with the ciphertext; callers must provide the exact same value
+   * on decrypt. This prevents ciphertext substitution attacks where an
+   * attacker swaps a user's encrypted MFA secret with another user's.
    */
-  async encrypt(plaintext: string, tenantKeyId: string): Promise<string> {
+  async encrypt(
+    plaintext: string,
+    tenantKeyId: string,
+    aad?: string,
+  ): Promise<string> {
     // Generate a fresh data encryption key for this operation
     const { plaintext: dataKey, encrypted: wrappedDataKey } =
       await this.kms.generateDataKey(tenantKeyId);
@@ -30,6 +40,9 @@ export class CryptoService {
     // Encrypt the data with AES-256-GCM
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', dataKey, iv);
+    if (aad) {
+      cipher.setAAD(Buffer.from(aad, 'utf8'));
+    }
     const encrypted = Buffer.concat([
       cipher.update(plaintext, 'utf8'),
       cipher.final(),
@@ -52,7 +65,11 @@ export class CryptoService {
    * Decrypt a ciphertext string produced by encrypt().
    * Parses the colon-separated format, unwraps the data key via KMS, then decrypts.
    */
-  async decrypt(ciphertext: string, tenantKeyId: string): Promise<string> {
+  async decrypt(
+    ciphertext: string,
+    tenantKeyId: string,
+    aad?: string,
+  ): Promise<string> {
     const parts = ciphertext.split(':');
     if (parts.length !== 4) {
       throw new Error(
@@ -72,6 +89,9 @@ export class CryptoService {
     // Decrypt the data
     const decipher = crypto.createDecipheriv('aes-256-gcm', dataKey, iv);
     decipher.setAuthTag(authTag);
+    if (aad) {
+      decipher.setAAD(Buffer.from(aad, 'utf8'));
+    }
     const decrypted = Buffer.concat([
       decipher.update(encrypted),
       decipher.final(),
@@ -86,16 +106,16 @@ export class CryptoService {
   /**
    * Encrypt a JSON-serializable value. Convenience wrapper around encrypt().
    */
-  async encryptJson(data: any, tenantKeyId: string): Promise<string> {
+  async encryptJson(data: any, tenantKeyId: string, aad?: string): Promise<string> {
     const json = JSON.stringify(data);
-    return this.encrypt(json, tenantKeyId);
+    return this.encrypt(json, tenantKeyId, aad);
   }
 
   /**
    * Decrypt a ciphertext and parse the result as JSON.
    */
-  async decryptJson(ciphertext: string, tenantKeyId: string): Promise<any> {
-    const json = await this.decrypt(ciphertext, tenantKeyId);
+  async decryptJson(ciphertext: string, tenantKeyId: string, aad?: string): Promise<any> {
+    const json = await this.decrypt(ciphertext, tenantKeyId, aad);
     return JSON.parse(json);
   }
 

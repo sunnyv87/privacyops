@@ -19,6 +19,8 @@ import { SecurityEventsModule } from './core/security/security-events.module';
 import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
 import { TenantGuard } from './core/tenant/guards/tenant.guard';
 import { PermissionsGuard } from './core/auth/guards/permissions.guard';
+import { AbacGuard } from './core/auth/guards/abac.guard';
+import { ApprovalGuard } from './core/auth/guards/approval.guard';
 import { CsrfGuard } from './core/security/csrf.guard';
 
 // Interceptors
@@ -123,11 +125,13 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
     PlatformOptimizationModule,
   ],
   providers: [
-    // Global guards (applied in order)
+    // Global guards (applied in order: CSRF -> JWT -> Tenant -> Permissions -> ABAC -> Approval)
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: AbacGuard },
+    { provide: APP_GUARD, useClass: ApprovalGuard },
     // Global interceptors
     { provide: APP_INTERCEPTOR, useClass: TimeoutInterceptor },
     { provide: APP_INTERCEPTOR, useClass: FieldMaskInterceptor },

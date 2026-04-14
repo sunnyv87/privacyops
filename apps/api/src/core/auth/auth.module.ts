@@ -8,6 +8,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { SessionService } from './services/session.service';
 import { MfaService } from './services/mfa.service';
+import { ApprovalService } from './services/approval.service';
+import { AbacEngine } from './policies/abac-engine';
 import { RateLimitGuard } from './guards/rate-limit.guard';
 
 const REDIS_PROVIDER = {
@@ -77,12 +79,21 @@ export class AuthModule {
         AuthService,
         SessionService,
         MfaService,
+        ApprovalService,
+        AbacEngine,
         RateLimitGuard,
         // Conditionally loaded strategies are registered in onModuleInit
         ...AuthModule.getConditionalStrategies(),
       ],
       controllers: [AuthController],
-      exports: [AuthService, SessionService, JwtModule, 'REDIS_CLIENT'],
+      exports: [
+        AuthService,
+        SessionService,
+        ApprovalService,
+        AbacEngine,
+        JwtModule,
+        'REDIS_CLIENT',
+      ],
     };
   }
 

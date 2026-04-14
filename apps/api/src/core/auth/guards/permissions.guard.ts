@@ -119,31 +119,67 @@ export class PermissionsGuard implements CanActivate {
    * 3. `request.body` — for create operations
    * 4. `request.query` — for list/filter operations
    *
-   * If no resource context is available, scope is not enforced (backward compatible).
+   * Fail-closed semantics: a user with a non-empty scope is only permitted
+   * on routes that have either (a) produced a resource context this guard
+   * can evaluate, or (b) been explicitly flagged as scope-exempt via
+   * `request.scopeExempt = true`. Routes that do neither are refused,
+   * because a silent allow here turns scope into advisory metadata that
+   * can be bypassed by simply omitting the filter field.
    */
   private evaluateScope(scope: RoleScope, request: any): boolean {
+    const hasAnyScope =
+      (scope.departments && scope.departments.length > 0) ||
+      (scope.dataSourceIds && scope.dataSourceIds.length > 0) ||
+      (scope.classifications && scope.classifications.length > 0);
+
+    // Users without any scope restrictions are unrestricted.
+    if (!hasAnyScope) return true;
+
+    // Explicit opt-out set by the controller or an upstream middleware
+    // when the route is known to have no scopable resource (e.g. listing
+    // your own profile, global dashboards the user is explicitly allowed
+    // to see). This must be set server-side and cannot be spoofed from
+    // the request body.
+    if (request.scopeExempt === true) return true;
+
     const resourceCtx = this.extractResourceContext(request);
 
-    // If no resource context is determinable, allow (backward compatible)
-    if (!resourceCtx) return true;
+    // Fail closed: a scoped user on an unscoped route is refused. The
+    // calling handler must attach a resourceContext (e.g. via a
+    // per-module scope-loader middleware) or mark the route as exempt.
+    if (!resourceCtx) {
+      this.logger.warn(
+        `Scope-enforcement fail-closed: route has no resource context for scoped user`,
+      );
+      return false;
+    }
 
     // Check department scope
-    if (scope.departments && scope.departments.length > 0 && resourceCtx.department) {
-      if (!scope.departments.includes(resourceCtx.department)) {
+    if (scope.departments && scope.departments.length > 0) {
+      if (
+        !resourceCtx.department ||
+        !scope.departments.includes(resourceCtx.department)
+      ) {
         return false;
       }
     }
 
     // Check data source scope
-    if (scope.dataSourceIds && scope.dataSourceIds.length > 0 && resourceCtx.dataSourceId) {
-      if (!scope.dataSourceIds.includes(resourceCtx.dataSourceId)) {
+    if (scope.dataSourceIds && scope.dataSourceIds.length > 0) {
+      if (
+        !resourceCtx.dataSourceId ||
+        !scope.dataSourceIds.includes(resourceCtx.dataSourceId)
+      ) {
         return false;
       }
     }
 
     // Check classification scope
-    if (scope.classifications && scope.classifications.length > 0 && resourceCtx.classification) {
-      if (!scope.classifications.includes(resourceCtx.classification)) {
+    if (scope.classifications && scope.classifications.length > 0) {
+      if (
+        !resourceCtx.classification ||
+        !scope.classifications.includes(resourceCtx.classification)
+      ) {
         return false;
       }
     }

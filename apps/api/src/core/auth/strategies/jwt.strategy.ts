@@ -29,12 +29,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload & { sid?: string }) {
-    // Validate session exists in Redis if session ID is present
-    if (payload.sid) {
-      const session = await this.sessionService.getSession(payload.sid);
-      if (!session) {
-        throw new UnauthorizedException('Session has been revoked');
-      }
+    // Every access token MUST carry a session ID so that revocation works.
+    // A token without a sid is either legacy (we have no such tokens in
+    // production) or forged — reject it. This closes the
+    // revocation-bypass hole where stolen tokens remained valid for 15m
+    // even after explicit logout.
+    if (!payload.sid) {
+      throw new UnauthorizedException('Malformed authentication token');
+    }
+
+    const session = await this.sessionService.getSession(payload.sid);
+    if (!session) {
+      throw new UnauthorizedException('Session has been revoked');
+    }
+
+    // Extra defense: the session must belong to the subject claimed in the
+    // JWT. A leaked session ID paired with a different JWT subject is a
+    // token-swapping attack attempt.
+    if (session.userId && session.userId !== payload.sub) {
+      throw new UnauthorizedException('Session/subject mismatch');
     }
 
     return {

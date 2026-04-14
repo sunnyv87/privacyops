@@ -52,17 +52,21 @@ export class PlatformOptimizationController {
   @ApiOperation({ summary: 'Apply an optimization recommendation' })
   async applyRecommendation(
     @Param('id') id: string,
+    @CurrentUser('tenantId') tenantId: string,
     @CurrentUser('id') userId: string,
   ) {
-    const result = await this.analyzer.applyRecommendation(id, userId);
+    const result = await this.analyzer.applyRecommendation(id, tenantId, userId);
     return { data: result };
   }
 
   @Post('recommendations/:id/revert')
   @RequirePermissions('platform:admin')
   @ApiOperation({ summary: 'Revert an optimization recommendation' })
-  async revertRecommendation(@Param('id') id: string) {
-    const result = await this.analyzer.revertRecommendation(id);
+  async revertRecommendation(
+    @Param('id') id: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const result = await this.analyzer.revertRecommendation(id, tenantId);
     return { data: result };
   }
 

@@ -49,34 +49,82 @@ export class KmsService implements OnModuleInit {
         );
       }
       this.logger.log('Local master key loaded from ENCRYPTION_MASTER_KEY');
-    } else {
-      const nodeEnv = this.config.get<string>('NODE_ENV', 'development');
-      if (nodeEnv === 'production') {
-        throw new Error(
-          'ENCRYPTION_MASTER_KEY or KMS_KEY_ARN must be set in production',
-        );
+      return;
+    }
+
+    const nodeEnv = this.config.get<string>('NODE_ENV', 'development');
+    if (nodeEnv === 'production') {
+      throw new Error(
+        'ENCRYPTION_MASTER_KEY or KMS_KEY_ARN must be set in production',
+      );
+    }
+
+    // Development fallback: read a random key from a gitignored file in the
+    // user's home directory, or create one on first run. This avoids the
+    // "deterministic-dev-key" anti-pattern where every developer's local
+    // instance (and CI) would derive the same keys from a hard-coded string.
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const os = require('os') as typeof import('os');
+    const keyPath = path.join(os.homedir(), '.privacyops-dev-master.key');
+
+    try {
+      if (fs.existsSync(keyPath)) {
+        const hex = fs.readFileSync(keyPath, 'utf8').trim();
+        const buf = Buffer.from(hex, 'hex');
+        if (buf.length === 32) {
+          this.localMasterKey = buf;
+          this.logger.warn(
+            `Loaded dev master key from ${keyPath} (NOT for production)`,
+          );
+          return;
+        }
       }
-      // Generate a deterministic dev key (not safe for production)
-      this.localMasterKey = crypto
-        .createHash('sha256')
-        .update('privacyops-dev-master-key-not-for-production')
-        .digest();
+
+      const newKey = crypto.randomBytes(32);
+      fs.writeFileSync(keyPath, newKey.toString('hex'), { mode: 0o600 });
+      this.localMasterKey = newKey;
       this.logger.warn(
-        'Using generated dev master key. Set ENCRYPTION_MASTER_KEY for persistent encryption.',
+        `Generated and persisted random dev master key at ${keyPath} (NOT for production). ` +
+          `Set ENCRYPTION_MASTER_KEY in .env for deterministic tests.`,
+      );
+    } catch (err) {
+      // Fallback for sandboxed environments where HOME is not writable.
+      this.localMasterKey = crypto.randomBytes(32);
+      this.logger.warn(
+        `Using ephemeral dev master key (HOME not writable): ${err}`,
       );
     }
   }
 
   /**
    * Derives a per-tenant key from the master key using HKDF.
+   *
+   * HKDF parameters:
+   *  - salt: A random per-tenant salt persisted in the database. Using a
+   *    random salt (rather than the public keyId) ensures that compromise
+   *    of the keyId cannot be used to precompute rainbow tables or match
+   *    keys across tenants with colliding IDs.
+   *  - info: Includes the tenantId so that derived keys for different
+   *    tenants are domain-separated even if they somehow share salt/master.
    */
-  private async deriveTenantKey(keyId: string): Promise<Buffer> {
+  private async deriveTenantKey(keyId: string, salt?: Buffer): Promise<Buffer> {
+    // Salt: caller may provide one (from TenantKey table). Otherwise derive
+    // a deterministic-but-domain-separated fallback from the keyId. This
+    // preserves backwards compatibility with existing ciphertexts until a
+    // migration re-wraps them under a random-salt key.
+    const effectiveSalt =
+      salt ??
+      crypto.createHash('sha256').update(`privacyops-hkdf-salt|${keyId}`).digest();
+
+    const info = Buffer.from(`privacyops-tenant-dek|${keyId}`, 'utf8');
+
     return new Promise<Buffer>((resolve, reject) => {
       crypto.hkdf(
         'sha256',
         this.localMasterKey!,
-        Buffer.from(keyId, 'utf8'), // salt = tenantKeyId
-        Buffer.from('privacyops-tenant-dek', 'utf8'), // info
+        effectiveSalt,
+        info,
         32, // 256-bit key
         (err, derivedKey) => {
           if (err) return reject(err);

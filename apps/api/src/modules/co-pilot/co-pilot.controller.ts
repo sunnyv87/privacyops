@@ -10,9 +10,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CoPilotService } from './co-pilot.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import { RequireFeature } from '@/core/licensing/decorators/require-feature.decorator';
 
 @ApiTags('AI Co-Pilot')
 @ApiBearerAuth()
+@RequireFeature('ai_copilot')
 @Controller('co-pilot')
 export class CoPilotController {
   constructor(private readonly coPilotService: CoPilotService) {}

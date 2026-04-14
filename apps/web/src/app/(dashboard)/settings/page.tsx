@@ -13,6 +13,9 @@ import { Input } from '@/components/ui/input';
 import { useUsers, useRoles, useAuditLogs } from '@/hooks/use-api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Shield, Key, Bell, Webhook, Users, Settings2, Globe } from 'lucide-react';
+import { PlanTab } from './_components/plan-tab';
+import { UsageTab } from './_components/usage-tab';
+import { BillingTab } from './_components/billing-tab';
 
 // Users table columns
 const userColumns: ColumnDef<any>[] = [
@@ -421,6 +424,9 @@ export default function SettingsPage() {
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="plan">Plan</TabsTrigger>
+          <TabsTrigger value="usage">Usage</TabsTrigger>
+          <TabsTrigger value="billing">Billing</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="roles">Roles</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
@@ -430,6 +436,15 @@ export default function SettingsPage() {
 
         <TabsContent value="general" className="mt-4">
           <GeneralTab />
+        </TabsContent>
+        <TabsContent value="plan" className="mt-4">
+          <PlanTab />
+        </TabsContent>
+        <TabsContent value="usage" className="mt-4">
+          <UsageTab />
+        </TabsContent>
+        <TabsContent value="billing" className="mt-4">
+          <BillingTab />
         </TabsContent>
         <TabsContent value="users" className="mt-4">
           <UsersTab />

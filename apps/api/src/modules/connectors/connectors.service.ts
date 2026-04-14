@@ -8,6 +8,7 @@ import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { CryptoService } from '@/core/crypto/crypto.service';
+import { MeteringService } from '@/core/metering/metering.service';
 import { ConnectorRegistry } from './connector-registry';
 import { CreateConnectorDto, UpdateConnectorDto } from './dto/connector.dto';
 
@@ -24,6 +25,7 @@ export class ConnectorsService {
     private readonly events: EventBusService,
     private readonly registry: ConnectorRegistry,
     private readonly crypto: CryptoService,
+    private readonly metering: MeteringService,
   ) {}
 
   async create(tenantId: string, userId: string, dto: CreateConnectorDto) {
@@ -249,6 +251,14 @@ export class ConnectorsService {
         data: { connectorId: id, result },
         timestamp: new Date(),
       });
+
+      if (result.success) {
+        // Count each successful connector sync against the tenant's quota.
+        this.metering.record(tenantId, 'connector_sync', 1, {
+          source: 'connectors.testConnection',
+          metadata: { connectorId: id, type: source.type },
+        });
+      }
 
       return result;
     } finally {

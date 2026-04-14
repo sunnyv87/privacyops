@@ -417,3 +417,85 @@ export enum BreachDetectionRuleType {
   EXTERNAL_EXPOSURE = 'external_exposure',
   ANOMALY = 'anomaly',
 }
+
+// ── SaaS Enums ───────────────────────────────────────────────
+// Added as part of the SaaS completion patch. `SubscriptionTier` above
+// is retained for backward compatibility with the free-form
+// `tenants.subscription_tier` column and is NOT removed.
+
+export enum PlanCode {
+  FREE = 'free',
+  STARTER = 'starter',
+  PRO = 'pro',
+  ENTERPRISE = 'enterprise',
+}
+
+export enum SubscriptionStatus {
+  ACTIVE = 'active',
+  TRIALING = 'trialing',
+  PAST_DUE = 'past_due',
+  CANCELED = 'canceled',
+  INCOMPLETE = 'incomplete',
+  PAUSED = 'paused',
+}
+
+export enum BillingProvider {
+  STRIPE = 'stripe',
+  NULL = 'null',
+}
+
+export enum InvoiceStatus {
+  DRAFT = 'draft',
+  OPEN = 'open',
+  PAID = 'paid',
+  VOID = 'void',
+  UNCOLLECTIBLE = 'uncollectible',
+}
+
+export enum BillingInterval {
+  MONTH = 'month',
+  YEAR = 'year',
+  CUSTOM = 'custom',
+}
+
+export enum UsageMetric {
+  CONNECTOR_SYNC = 'connector_sync',
+  DATASET_DISCOVERED = 'dataset_discovered',
+  RISK_SCAN = 'risk_scan',
+  API_CALL = 'api_call',
+  DSAR_REQUEST = 'dsar_request',
+  AI_COPILOT_QUERY = 'ai_copilot_query',
+  USERS = 'users',
+}
+
+export enum UsagePeriod {
+  DAY = 'day',
+  MONTH = 'month',
+  LIFETIME = 'lifetime',
+}
+
+export enum FeatureKey {
+  AI_COPILOT = 'ai_copilot',
+  ATTACK_PATH_ANALYSIS = 'attack_path_analysis',
+  SHADOW_DATA_DETECTION = 'shadow_data_detection',
+  ADVANCED_RISK_ANALYTICS = 'advanced_risk_analytics',
+  API_ACCESS = 'api_access',
+  SCIM_PROVISIONING = 'scim_provisioning',
+  SSO_SAML = 'sso_saml',
+  CUSTOM_RETENTION_RULES = 'custom_retention_rules',
+}
+
+export enum OnboardingStep {
+  CREATED = 'created',
+  ADMIN_USER_CREATED = 'admin_user_created',
+  ROLES_BOOTSTRAPPED = 'roles_bootstrapped',
+  POLICIES_SEEDED = 'policies_seeded',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
+export enum OnboardingStatus {
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}

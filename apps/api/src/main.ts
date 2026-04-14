@@ -89,6 +89,16 @@ async function bootstrap() {
     logger: new StructuredLogger(),
   });
 
+  // Billing webhook endpoints need the RAW request body for HMAC signature
+  // verification (Stripe, Paddle, etc.). Mount a path-scoped express.raw()
+  // parser BEFORE the global express.json() middleware so `req.body` is a
+  // Buffer for webhook handlers and a parsed object everywhere else. Any
+  // additional webhook paths should be added here.
+  app.use(
+    '/api/v1/billing/webhooks/stripe',
+    express.raw({ type: 'application/json', limit: '1mb' }),
+  );
+
   // Request size limits — reject oversized payloads before they reach
   // handlers. These caps apply globally to every JSON, URL-encoded, and
   // text request body parsed by express. Binary uploads are NOT accepted

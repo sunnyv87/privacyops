@@ -9,9 +9,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { RiskIntelligenceService } from './risk-intelligence.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import { RequireFeature } from '@/core/licensing/decorators/require-feature.decorator';
 
 @ApiTags('DSPM - Risk Intelligence')
 @ApiBearerAuth()
+@RequireFeature('advanced_risk_analytics')
 @Controller('dspm/risk-intelligence')
 export class RiskIntelligenceController {
   constructor(

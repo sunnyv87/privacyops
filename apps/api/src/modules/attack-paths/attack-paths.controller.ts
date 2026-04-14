@@ -12,10 +12,12 @@ import { AttackPathsService } from './attack-paths.service';
 import { AttackPathAnalyzer } from './attack-path-analyzer';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import { RequireFeature } from '@/core/licensing/decorators/require-feature.decorator';
 import { UpdateAttackPathStatusDto } from './dto/attack-path.dto';
 
 @ApiTags('Attack Paths')
 @ApiBearerAuth()
+@RequireFeature('attack_path_analysis')
 @Controller('attack-paths')
 export class AttackPathsController {
   constructor(

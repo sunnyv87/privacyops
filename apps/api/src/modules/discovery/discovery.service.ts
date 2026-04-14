@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
+import { MeteringService } from '@/core/metering/metering.service';
 import { ConnectorRegistry } from '@/modules/connectors/connector-registry';
 import { StartScanDto, ScanFilterDto, EnrichAssetMetadataDto } from './dto/discovery.dto';
 
@@ -22,6 +23,7 @@ export class DiscoveryService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly events: EventBusService,
+    private readonly metering: MeteringService,
     private readonly connectorRegistry: ConnectorRegistry,
   ) {}
 
@@ -67,6 +69,13 @@ export class DiscoveryService {
       entityType: 'ScanJob',
       entityId: scanJob.id,
       changes: { dataSourceId: dto.dataSourceId, mode: dto.mode },
+    });
+
+    // Meter the scan start for quota enforcement / billing. The asset count
+    // produced by the scan is metered separately in executeScan().
+    this.metering.record(tenantId, 'risk_scan', 1, {
+      source: 'discovery.startScan',
+      metadata: { dataSourceId: dto.dataSourceId, scanJobId: scanJob.id },
     });
 
     return scanJob;
@@ -308,6 +317,18 @@ export class DiscoveryService {
         tenantId: scanJob.tenantId,
         payload: { scanJobId, assetsDiscovered },
       });
+
+      // Meter the total assets discovered for this scan as a single batched
+      // usage event. Individual upserts would flood the bus; the consumer
+      // persists one row per batched publish.
+      if (assetsDiscovered > 0) {
+        this.metering.recordBatch(
+          scanJob.tenantId,
+          'dataset_discovered',
+          assetsDiscovered,
+          'discovery.executeScan',
+        );
+      }
 
       return { scanJobId, status: 'completed', assetsDiscovered, fieldsPopulated, fieldsSampled, accessPoliciesCollected };
     } catch (error) {

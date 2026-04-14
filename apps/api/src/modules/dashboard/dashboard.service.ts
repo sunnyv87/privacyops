@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
+import { LicensingService } from '@/core/licensing/licensing.service';
 
 @Injectable()
 export class DashboardService {
@@ -11,6 +12,7 @@ export class DashboardService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly events: EventBusService,
+    private readonly licensing: LicensingService,
   ) {}
 
   async getStats(tenantId: string) {
@@ -445,5 +447,146 @@ export class DashboardService {
       byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
       activeDatasetUsages: datasetUsageCount,
     };
+  }
+
+  // --------------------------------------------------------------------
+  // SaaS: tenant / plan / usage views
+  // --------------------------------------------------------------------
+
+  /**
+   * Returns a lightweight summary of the tenant used by the settings
+   * overview tab — name, slug, plan, subscription status, and the
+   * onboarding state. All data is tenant-scoped.
+   */
+  async getTenantInfo(tenantId: string) {
+    const [tenant, subscription, onboarding] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          domain: true,
+          status: true,
+          subscriptionTier: true,
+          dataResidencyRegion: true,
+          trialExpiresAt: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.subscription.findUnique({
+        where: { tenantId },
+        include: { plan: { select: { code: true, name: true } } },
+      }),
+      this.prisma.onboardingState.findUnique({ where: { tenantId } }),
+    ]);
+
+    return {
+      tenant,
+      subscription: subscription
+        ? {
+            status: subscription.status,
+            planCode: subscription.plan?.code,
+            planName: subscription.plan?.name,
+            currentPeriodStart: subscription.currentPeriodStart,
+            currentPeriodEnd: subscription.currentPeriodEnd,
+            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+            trialEndsAt: subscription.trialEndsAt,
+          }
+        : null,
+      onboarding: onboarding
+        ? {
+            status: onboarding.status,
+            currentStep: onboarding.currentStep,
+            completedSteps: onboarding.completedSteps,
+            completedAt: onboarding.completedAt,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Returns the active plan + enabled features + quota limits as a single
+   * payload for the settings Plan tab.
+   */
+  async getPlanDetails(tenantId: string) {
+    const entitlements = await this.licensing.getEntitlements(tenantId);
+    return {
+      planCode: entitlements.planCode,
+      planName: entitlements.planName,
+      subscriptionStatus: entitlements.subscriptionStatus,
+      features: Object.entries(entitlements.features).map(([key, enabled]) => ({
+        featureKey: key,
+        enabled,
+      })),
+      limits: entitlements.limits,
+      overrides: entitlements.overrides,
+    };
+  }
+
+  /**
+   * Returns per-metric usage for the current billing period. Reads the
+   * UsageAggregate rollup (populated by UsageAggregatorService) rather than
+   * the raw usage_events table so the response is O(metrics) and not
+   * O(events).
+   */
+  async getUsageStats(tenantId: string, period: 'day' | 'month' = 'month') {
+    const now = new Date();
+    const periodStart =
+      period === 'day'
+        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        : new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [aggregates, entitlements] = await Promise.all([
+      this.prisma.usageAggregate.findMany({
+        where: { tenantId, period, periodStart },
+        orderBy: { metric: 'asc' },
+      }),
+      this.licensing.getEntitlements(tenantId),
+    ]);
+
+    const limitMap = new Map<string, number>();
+    for (const l of entitlements.limits) {
+      limitMap.set(l.metric, l.limitValue);
+    }
+
+    return {
+      period,
+      periodStart,
+      metrics: aggregates.map((a) => {
+        const limit = limitMap.get(a.metric) ?? null;
+        const used = Number(a.value);
+        return {
+          metric: a.metric,
+          used,
+          limit,
+          percentUsed: limit && limit > 0 ? Math.round((used / limit) * 100) : null,
+          remaining: limit != null && limit >= 0 ? Math.max(0, limit - used) : null,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Returns a connector health summary for the Connectors tab. Thin
+   * aggregation over data_sources — no new tables are required.
+   */
+  async getConnectorStatus(tenantId: string) {
+    const rows = await this.prisma.dataSource.groupBy({
+      by: ['status', 'healthStatus'],
+      where: { tenantId, deletedAt: null },
+      _count: { id: true },
+    });
+
+    const byStatus: Record<string, number> = {};
+    const byHealth: Record<string, number> = {};
+    for (const row of rows) {
+      byStatus[row.status] = (byStatus[row.status] ?? 0) + row._count.id;
+      if (row.healthStatus) {
+        byHealth[row.healthStatus] = (byHealth[row.healthStatus] ?? 0) + row._count.id;
+      }
+    }
+
+    return { byStatus, byHealth };
   }
 }

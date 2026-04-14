@@ -15,6 +15,12 @@ import { NotificationsModule } from './core/notifications/notifications.module';
 import { CryptoModule } from './core/crypto/crypto.module';
 import { SecurityEventsModule } from './core/security/security-events.module';
 
+// SaaS core modules
+import { MeteringModule } from './core/metering/metering.module';
+import { LicensingModule } from './core/licensing/licensing.module';
+import { BillingModule } from './core/billing/billing.module';
+import { FeatureGateGuard } from './core/licensing/guards/feature-gate.guard';
+
 // Guards
 import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
 import { TenantGuard } from './core/tenant/guards/tenant.guard';
@@ -80,9 +86,16 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
     PrismaModule,
     CryptoModule,
     AuthModule.register(),
-    TenantModule,
+    // AuditModule + EventsModule must load BEFORE TenantModule because
+    // TenantService now depends on AuditService and (via LicensingModule)
+    // LicensingService. MeteringModule + LicensingModule are @Global so
+    // their order among the core modules is not load-order-sensitive.
     AuditModule,
     EventsModule,
+    MeteringModule,
+    LicensingModule,
+    BillingModule,
+    TenantModule,
     SearchModule,
     WorkflowModule,
     NotificationsModule,
@@ -125,11 +138,18 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
     PlatformOptimizationModule,
   ],
   providers: [
-    // Global guards (applied in order: CSRF -> JWT -> Tenant -> Permissions -> ABAC -> Approval)
+    // Global guards (applied in order: CSRF -> JWT -> Tenant -> Permissions
+    // -> FeatureGate -> ABAC -> Approval). FeatureGateGuard runs AFTER
+    // PermissionsGuard so RBAC is evaluated first and licensing is a
+    // second-stage check — a user who lacks permission is denied with 403
+    // before we reveal whether the feature is licensed. It runs BEFORE
+    // ABAC and Approval because those two only apply once the request is
+    // known to be permitted by RBAC + licensing.
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: FeatureGateGuard },
     { provide: APP_GUARD, useClass: AbacGuard },
     { provide: APP_GUARD, useClass: ApprovalGuard },
     // Global interceptors

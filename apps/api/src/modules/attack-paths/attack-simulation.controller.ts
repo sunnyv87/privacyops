@@ -10,9 +10,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AttackSimulationService } from './attack-simulation.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import { RequireFeature } from '@/core/licensing/decorators/require-feature.decorator';
 
 @ApiTags('Attack Simulations')
 @ApiBearerAuth()
+@RequireFeature('attack_path_analysis')
 @Controller('attack-paths/simulations')
 export class AttackSimulationController {
   constructor(private readonly simulationService: AttackSimulationService) {}

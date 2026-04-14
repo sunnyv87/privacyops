@@ -101,4 +101,42 @@ export class DashboardController {
     const overview = await this.dashboardService.getAiGovernanceOverview(tenantId);
     return { data: overview };
   }
+
+  @Get('tenant-info')
+  @RequirePermissions('dashboard:stats:read')
+  @ApiOperation({ summary: 'Get tenant profile, subscription and onboarding snapshot' })
+  async getTenantInfo(@CurrentUser('tenantId') tenantId: string) {
+    const info = await this.dashboardService.getTenantInfo(tenantId);
+    return { data: info };
+  }
+
+  @Get('plan')
+  @RequirePermissions('dashboard:stats:read')
+  @ApiOperation({ summary: 'Get active plan, features and effective limits' })
+  async getPlanDetails(@CurrentUser('tenantId') tenantId: string) {
+    const plan = await this.dashboardService.getPlanDetails(tenantId);
+    return { data: plan };
+  }
+
+  @Get('usage')
+  @RequirePermissions('dashboard:stats:read')
+  @ApiOperation({ summary: 'Get usage metrics for the current billing period' })
+  async getUsageStats(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('period') period?: 'day' | 'month',
+  ) {
+    const usage = await this.dashboardService.getUsageStats(
+      tenantId,
+      period === 'day' ? 'day' : 'month',
+    );
+    return { data: usage };
+  }
+
+  @Get('connector-status')
+  @RequirePermissions('dashboard:stats:read')
+  @ApiOperation({ summary: 'Get connector health and status distribution' })
+  async getConnectorStatus(@CurrentUser('tenantId') tenantId: string) {
+    const status = await this.dashboardService.getConnectorStatus(tenantId);
+    return { data: status };
+  }
 }

@@ -11,10 +11,12 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ShadowDataService } from './shadow-data.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
+import { RequireFeature } from '@/core/licensing/decorators/require-feature.decorator';
 import { UpdateAlertStatusDto } from './dto/shadow-data.dto';
 
 @ApiTags('Shadow Data')
 @ApiBearerAuth()
+@RequireFeature('shadow_data_detection')
 @Controller('shadow-data')
 export class ShadowDataController {
   constructor(private readonly shadowDataService: ShadowDataService) {}

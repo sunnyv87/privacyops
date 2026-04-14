@@ -29,10 +29,24 @@ model Tenant {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
+  // SaaS additive columns — nullable for backward compatibility
+  planId              String?  @map("plan_id") @db.Uuid
+  billingAccountId    String?  @unique @map("billing_account_id") @db.Uuid
+
   // Relations
   users       User[]
   dataSources DataSource[]
   roles       Role[]
+
+  // SaaS relations (nullable — not enforced on existing data)
+  plan              Plan?              @relation(fields: [planId], references: [id])
+  billingAccount    BillingAccount?    @relation(fields: [billingAccountId], references: [id])
+  subscription      Subscription?
+  invoices          Invoice[]
+  usageEvents       UsageEvent[]
+  usageAggregates   UsageAggregate[]
+  featureOverrides  FeatureOverride[]
+  onboardingState   OnboardingState?
 
   @@map("tenants")
 }
@@ -1939,4 +1953,211 @@ model PerformanceBaseline {
 
   @@unique([serviceName, operationName])
   @@map("performance_baselines")
+}
+
+// ============================================================================
+// SaaS: Plans, Subscriptions, Billing, Usage Metering, Licensing
+// ----------------------------------------------------------------------------
+// These tables are additive and feature-flag gated. Plan / PlanFeature /
+// PlanLimit are GLOBAL (no tenant_id) — they are catalogue rows shared across
+// tenants and are NOT covered by RLS. Everything else is tenant-scoped and
+// participates in the standard `tenant_isolation_*` RLS policies.
+// ============================================================================
+
+model Plan {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code            String   @unique @db.VarChar(50) // 'free', 'starter', 'pro', 'enterprise'
+  name            String   @db.VarChar(100)
+  description     String?  @db.Text
+  priceCents      Int      @default(0) @map("price_cents")
+  currency        String   @default("USD") @db.VarChar(3)
+  billingInterval String   @default("month") @map("billing_interval") @db.VarChar(20) // month, year, custom
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  features      PlanFeature[]
+  limits        PlanLimit[]
+  subscriptions Subscription[]
+  tenants       Tenant[]
+
+  @@map("plans")
+}
+
+model PlanFeature {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId     String   @map("plan_id") @db.Uuid
+  featureKey String   @map("feature_key") @db.VarChar(100) // 'ai_copilot', 'attack_path_analysis', ...
+  enabled    Boolean  @default(true)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@index([featureKey])
+  @@map("plan_features")
+}
+
+model PlanLimit {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId          String   @map("plan_id") @db.Uuid
+  metric          String   @db.VarChar(100) // 'connector_sync', 'dataset_discovered', 'risk_scan', 'api_call', 'users'
+  limitValue      BigInt   @map("limit_value") // -1 means unlimited
+  period          String   @default("month") @db.VarChar(20) // month, day, lifetime
+  quotaEnforced   Boolean  @default(false) @map("quota_enforced") // if true, FeatureGateGuard blocks on overage
+  softWarningPct  Int      @default(80) @map("soft_warning_pct")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, metric])
+  @@map("plan_limits")
+}
+
+model Subscription {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId               String    @unique @map("tenant_id") @db.Uuid
+  planId                 String    @map("plan_id") @db.Uuid
+  status                 String    @default("active") @db.VarChar(50) // active, past_due, canceled, trialing, incomplete, paused
+  provider               String    @default("null") @db.VarChar(50) // stripe, null
+  providerSubscriptionId String?   @map("provider_subscription_id") @db.VarChar(255)
+  currentPeriodStart     DateTime  @default(now()) @map("current_period_start")
+  currentPeriodEnd       DateTime  @map("current_period_end")
+  cancelAtPeriodEnd      Boolean   @default(false) @map("cancel_at_period_end")
+  canceledAt             DateTime? @map("canceled_at")
+  trialEndsAt            DateTime? @map("trial_ends_at")
+  metadata               Json?
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@index([providerSubscriptionId])
+  @@map("subscriptions")
+}
+
+model BillingAccount {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId               String   @unique @map("tenant_id") @db.Uuid
+  provider               String   @default("null") @db.VarChar(50) // stripe, null
+  providerCustomerId     String?  @map("provider_customer_id") @db.VarChar(255)
+  billingEmail           String?  @map("billing_email") @db.VarChar(255)
+  billingName            String?  @map("billing_name") @db.VarChar(255)
+  paymentMethodBrand     String?  @map("payment_method_brand") @db.VarChar(50) // visa, mastercard, ...
+  paymentMethodLast4     String?  @map("payment_method_last4") @db.VarChar(8)
+  paymentMethodExpMonth  Int?     @map("payment_method_exp_month")
+  paymentMethodExpYear   Int?     @map("payment_method_exp_year")
+  taxId                  String?  @map("tax_id") @db.VarChar(100)
+  addressLine1           String?  @map("address_line1") @db.VarChar(255)
+  addressLine2           String?  @map("address_line2") @db.VarChar(255)
+  addressCity            String?  @map("address_city") @db.VarChar(100)
+  addressState           String?  @map("address_state") @db.VarChar(100)
+  addressPostalCode      String?  @map("address_postal_code") @db.VarChar(20)
+  addressCountry         String?  @map("address_country") @db.VarChar(2)
+  metadata               Json?
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant?
+
+  @@index([providerCustomerId])
+  @@map("billing_accounts")
+}
+
+model Invoice {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  providerInvoiceId  String?   @unique @map("provider_invoice_id") @db.VarChar(255)
+  providerEventId    String?   @unique @map("provider_event_id") @db.VarChar(255) // for webhook idempotency
+  amountCents        Int       @map("amount_cents")
+  currency           String    @default("USD") @db.VarChar(3)
+  status             String    @db.VarChar(50) // draft, open, paid, void, uncollectible
+  periodStart        DateTime  @map("period_start")
+  periodEnd          DateTime  @map("period_end")
+  issuedAt           DateTime  @default(now()) @map("issued_at")
+  paidAt             DateTime? @map("paid_at")
+  pdfUrl             String?   @map("pdf_url") @db.VarChar(1000)
+  hostedInvoiceUrl   String?   @map("hosted_invoice_url") @db.VarChar(1000)
+  metadata           Json?
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, issuedAt])
+  @@index([status])
+  @@map("invoices")
+}
+
+model UsageEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  metric        String   @db.VarChar(100) // matches PlanLimit.metric
+  value         BigInt   @default(1)
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+  correlationId String?  @map("correlation_id") @db.VarChar(100)
+  source        String?  @db.VarChar(100) // controller or service that recorded the event
+  metadata      Json?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, metric, occurredAt])
+  @@index([occurredAt]) // for TTL cleanup
+  @@map("usage_events")
+}
+
+model UsageAggregate {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  metric        String   @db.VarChar(100)
+  period        String   @db.VarChar(20) // day, month
+  periodStart   DateTime @map("period_start")
+  periodEnd     DateTime @map("period_end")
+  value         BigInt   @default(0)
+  limitValue    BigInt?  @map("limit_value")
+  overageValue  BigInt   @default(0) @map("overage_value")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, metric, period, periodStart])
+  @@index([tenantId, metric])
+  @@map("usage_aggregates")
+}
+
+model FeatureOverride {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  featureKey String    @map("feature_key") @db.VarChar(100)
+  enabled    Boolean   @default(true)
+  reason     String?   @db.Text
+  grantedBy  String?   @map("granted_by") @db.Uuid // user id of platform admin
+  expiresAt  DateTime? @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, featureKey])
+  @@index([expiresAt])
+  @@map("feature_overrides")
+}
+
+model OnboardingState {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @unique @map("tenant_id") @db.Uuid
+  currentStep     String    @default("created") @map("current_step") @db.VarChar(50) // created, admin_user_created, roles_bootstrapped, policies_seeded, completed, failed
+  status          String    @default("in_progress") @db.VarChar(50) // in_progress, completed, failed
+  completedSteps  Json?     @map("completed_steps")
+  errorMessage    String?   @map("error_message") @db.Text
+  startedAt       DateTime  @default(now()) @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_states")
 }

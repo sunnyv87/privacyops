@@ -293,10 +293,211 @@ async function main() {
   console.log('Created regulations and obligations');
 
   // ============================================================================
+  // Plan Catalogue (SaaS)
+  // ----------------------------------------------------------------------------
+  // Catalogue rows are GLOBAL (no tenant_id) and shared across tenants.
+  // Feature keys must match the values used in @RequireFeature(...) decorators
+  // on premium controllers. Metrics must match MeteringService record() calls.
+  // ============================================================================
+  type PlanSpec = {
+    code: string;
+    name: string;
+    description: string;
+    priceCents: number;
+    currency: string;
+    billingInterval: string;
+    sortOrder: number;
+    features: string[];
+    limits: Array<{ metric: string; limit: number; quotaEnforced?: boolean; softWarningPct?: number }>;
+  };
+
+  const planSpecs: PlanSpec[] = [
+    {
+      code: 'free',
+      name: 'Free',
+      description: 'Evaluate the platform with core discovery and DSPM baseline features.',
+      priceCents: 0,
+      currency: 'USD',
+      billingInterval: 'month',
+      sortOrder: 10,
+      features: [
+        'core_discovery',
+        'core_classification',
+        'core_dspm',
+        'compliance_reporting',
+        'audit_logs',
+      ],
+      limits: [
+        { metric: 'api_call', limit: 10_000, quotaEnforced: false, softWarningPct: 80 },
+        { metric: 'connector_sync', limit: 50, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'dataset_discovered', limit: 1_000, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'risk_scan', limit: 10, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'users', limit: 3, quotaEnforced: true, softWarningPct: 100 },
+      ],
+    },
+    {
+      code: 'starter',
+      name: 'Starter',
+      description: 'Privacy essentials: consent, DSAR automation, ROPA and vendor management.',
+      priceCents: 49_900,
+      currency: 'USD',
+      billingInterval: 'month',
+      sortOrder: 20,
+      features: [
+        'core_discovery',
+        'core_classification',
+        'core_dspm',
+        'compliance_reporting',
+        'audit_logs',
+        'consent_management',
+        'dsar_automation',
+        'retention_policies',
+        'vendor_management',
+        'ropa',
+      ],
+      limits: [
+        { metric: 'api_call', limit: 100_000, quotaEnforced: false, softWarningPct: 80 },
+        { metric: 'connector_sync', limit: 500, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'dataset_discovered', limit: 10_000, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'risk_scan', limit: 100, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'users', limit: 10, quotaEnforced: true, softWarningPct: 100 },
+      ],
+    },
+    {
+      code: 'pro',
+      name: 'Pro',
+      description: 'Advanced DSPM: shadow data detection, predictive risk, breach response, SSO.',
+      priceCents: 199_900,
+      currency: 'USD',
+      billingInterval: 'month',
+      sortOrder: 30,
+      features: [
+        'core_discovery',
+        'core_classification',
+        'core_dspm',
+        'compliance_reporting',
+        'audit_logs',
+        'consent_management',
+        'dsar_automation',
+        'retention_policies',
+        'vendor_management',
+        'ropa',
+        'shadow_data_detection',
+        'advanced_risk_analytics',
+        'breach_management',
+        'sso_saml',
+      ],
+      limits: [
+        { metric: 'api_call', limit: 1_000_000, quotaEnforced: false, softWarningPct: 80 },
+        { metric: 'connector_sync', limit: 5_000, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'dataset_discovered', limit: 100_000, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'risk_scan', limit: 1_000, quotaEnforced: true, softWarningPct: 80 },
+        { metric: 'users', limit: 50, quotaEnforced: true, softWarningPct: 100 },
+      ],
+    },
+    {
+      code: 'enterprise',
+      name: 'Enterprise',
+      description: 'Unlimited scale with AI co-pilot, attack path analysis and SCIM provisioning.',
+      priceCents: 0, // custom pricing — handled off-platform
+      currency: 'USD',
+      billingInterval: 'custom',
+      sortOrder: 40,
+      features: [
+        'core_discovery',
+        'core_classification',
+        'core_dspm',
+        'compliance_reporting',
+        'audit_logs',
+        'consent_management',
+        'dsar_automation',
+        'retention_policies',
+        'vendor_management',
+        'ropa',
+        'shadow_data_detection',
+        'advanced_risk_analytics',
+        'breach_management',
+        'sso_saml',
+        'ai_copilot',
+        'attack_path_analysis',
+        'scim_provisioning',
+      ],
+      limits: [
+        { metric: 'api_call', limit: -1 },
+        { metric: 'connector_sync', limit: -1 },
+        { metric: 'dataset_discovered', limit: -1 },
+        { metric: 'risk_scan', limit: -1 },
+        { metric: 'users', limit: -1 },
+      ],
+    },
+  ];
+
+  for (const spec of planSpecs) {
+    const plan = await prisma.plan.upsert({
+      where: { code: spec.code },
+      update: {
+        name: spec.name,
+        description: spec.description,
+        priceCents: spec.priceCents,
+        currency: spec.currency,
+        billingInterval: spec.billingInterval,
+        isActive: true,
+        sortOrder: spec.sortOrder,
+      },
+      create: {
+        code: spec.code,
+        name: spec.name,
+        description: spec.description,
+        priceCents: spec.priceCents,
+        currency: spec.currency,
+        billingInterval: spec.billingInterval,
+        isActive: true,
+        sortOrder: spec.sortOrder,
+      },
+    });
+
+    for (const featureKey of spec.features) {
+      await prisma.planFeature.upsert({
+        where: { planId_featureKey: { planId: plan.id, featureKey } },
+        update: { enabled: true },
+        create: { planId: plan.id, featureKey, enabled: true },
+      });
+    }
+
+    for (const limit of spec.limits) {
+      await prisma.planLimit.upsert({
+        where: { planId_metric: { planId: plan.id, metric: limit.metric } },
+        update: {
+          limitValue: BigInt(limit.limit),
+          period: 'month',
+          quotaEnforced: limit.quotaEnforced ?? false,
+          softWarningPct: limit.softWarningPct ?? 80,
+        },
+        create: {
+          planId: plan.id,
+          metric: limit.metric,
+          limitValue: BigInt(limit.limit),
+          period: 'month',
+          quotaEnforced: limit.quotaEnforced ?? false,
+          softWarningPct: limit.softWarningPct ?? 80,
+        },
+      });
+    }
+  }
+
+  console.log(`Created ${planSpecs.length} plans with features and limits`);
+
+  // ============================================================================
   // Demo Tenant
   // ============================================================================
   const tenantId = randomUUID();
   const adminUserId = randomUUID();
+
+  // Link the demo tenant to the enterprise plan so every gated feature works.
+  const enterprisePlan = await prisma.plan.findUnique({ where: { code: 'enterprise' } });
+  if (!enterprisePlan) {
+    throw new Error('Enterprise plan not found after seeding — aborting demo tenant creation.');
+  }
 
   await prisma.tenant.create({
     data: {
@@ -308,6 +509,56 @@ async function main() {
       status: 'active',
       dataResidencyRegion: 'ap-south-1',
       encryptionKeyId: 'demo-key-techd',
+      planId: enterprisePlan.id,
+    },
+  });
+
+  // Create a billing account + subscription so the dashboard/billing endpoints
+  // have something to show for the demo tenant.
+  const billingAccount = await prisma.billingAccount.create({
+    data: {
+      tenantId,
+      provider: 'null',
+      billingEmail: 'billing@techd.com',
+      billingName: 'TechD Demo',
+      addressCountry: 'IN',
+    },
+  });
+
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: { billingAccountId: billingAccount.id },
+  });
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+  await prisma.subscription.create({
+    data: {
+      tenantId,
+      planId: enterprisePlan.id,
+      status: 'active',
+      provider: 'null',
+      currentPeriodStart: now,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    },
+  });
+
+  await prisma.onboardingState.create({
+    data: {
+      tenantId,
+      currentStep: 'completed',
+      status: 'completed',
+      completedSteps: [
+        'tenant_created',
+        'admin_user_created',
+        'roles_assigned',
+        'subscription_created',
+        'billing_account_created',
+      ],
+      completedAt: now,
     },
   });
 

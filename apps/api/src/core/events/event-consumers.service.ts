@@ -451,13 +451,30 @@ export class EventConsumersService implements OnModuleInit {
       },
     ];
 
+    // Cache valid tenant IDs for 60s to avoid hammering the DB on every event.
+    const tenantCache = new Map<string, number>();
+    const TENANT_CACHE_TTL = 60_000;
+
     let subscribed = 0;
     for (const { event, durable, handler } of consumers) {
-      // Wrap each handler with payload validation
       const validatedHandler = async (e: PlatformEvent) => {
         if (!validateEventPayload(e)) {
           this.logger.warn(`Dropping malformed event for ${event}: missing required fields`);
           return;
+        }
+        // Validate tenant exists — prevents cross-tenant injection via forged events
+        const now = Date.now();
+        const cached = tenantCache.get(e.tenantId);
+        if (!cached || now - cached > TENANT_CACHE_TTL) {
+          const tenant = await this.prisma.tenant.findUnique({
+            where: { id: e.tenantId },
+            select: { id: true },
+          });
+          if (!tenant) {
+            this.logger.warn(`Dropping event ${event}: unknown tenantId=${e.tenantId}`);
+            return;
+          }
+          tenantCache.set(e.tenantId, now);
         }
         await handler(e);
       };

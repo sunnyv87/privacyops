@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, createHmac, randomUUID } from 'crypto';
 import { connect, NatsConnection, JSONCodec, JetStreamManager, JetStreamClient } from 'nats';
 import { CorrelationIdMiddleware } from '@/core/telemetry/correlation-id.middleware';
 import { PrometheusService } from '@/core/telemetry/prometheus.service';
@@ -24,6 +24,7 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
   private js: JetStreamClient | null = null;
   private codec = JSONCodec();
   private eventCounts = new Map<string, { success: number; failure: number }>();
+  private readonly hmacSecret: string | null = null;
   /** In-memory idempotency cache: eventId -> timestamp. Entries expire after IDEMPOTENCY_TTL_MS. */
   private processedEvents = new Map<string, number>();
   private static readonly IDEMPOTENCY_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -31,7 +32,9 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
 
   private prometheus: PrometheusService | null = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService) {
+    this.hmacSecret = this.config.get<string>('EVENT_HMAC_SECRET') || null;
+  }
 
   /** Late-bind PrometheusService to avoid circular DI during module init. */
   setPrometheus(prometheus: PrometheusService) {
@@ -122,10 +125,16 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     }
 
     const subject = `privacyops.${event.type}`;
-    const payload = {
+    const payload: Record<string, any> = {
       ...event,
       timestamp: event.timestamp.toISOString(),
     };
+
+    if (this.hmacSecret) {
+      payload._hmac = createHmac('sha256', this.hmacSecret)
+        .update(JSON.stringify({ type: event.type, tenantId: event.tenantId, eventId: event.eventId }))
+        .digest('hex');
+    }
 
     if (this.js) {
       await this.js.publish(subject, this.codec.encode(payload));
@@ -156,6 +165,17 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
         const eventStart = Date.now();
         try {
           event = this.codec.decode(msg.data) as PlatformEvent;
+          // Verify HMAC if signing is enabled
+          if (this.hmacSecret && (event as any)._hmac) {
+            const expected = createHmac('sha256', this.hmacSecret)
+              .update(JSON.stringify({ type: event.type, tenantId: event.tenantId, eventId: event.eventId }))
+              .digest('hex');
+            if ((event as any)._hmac !== expected) {
+              this.logger.warn(`HMAC verification failed for event ${event.eventId} on ${subject}`);
+              msg.ack();
+              continue;
+            }
+          }
           // Idempotency: skip duplicate events
           if (this.isAlreadyProcessed(event)) {
             this.logger.debug(`Skipping duplicate event ${event.eventId} for ${subject}`);
@@ -216,6 +236,27 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private static readonly DLQ_SENSITIVE_KEYS = new Set([
+    'password', 'secret', 'token', 'apikey', 'api_key', 'credential',
+    'ssn', 'credit_card', 'creditcard', 'accesstoken', 'access_token',
+    'refreshtoken', 'refresh_token', 'privatekey', 'private_key',
+  ]);
+
+  private redactDlqData(data: any): any {
+    if (!data || typeof data !== 'object') return data;
+    const safe: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (EventBusService.DLQ_SENSITIVE_KEYS.has(key.toLowerCase())) {
+        safe[key] = '[REDACTED]';
+      } else if (typeof value === 'object' && value !== null) {
+        safe[key] = this.redactDlqData(value);
+      } else {
+        safe[key] = value;
+      }
+    }
+    return safe;
+  }
+
   private async publishToDlq(
     subject: string,
     event: PlatformEvent,
@@ -225,7 +266,10 @@ export class EventBusService implements OnModuleInit, OnModuleDestroy {
     try {
       const dlqPayload = {
         originalSubject: subject,
-        event,
+        event: {
+          ...event,
+          data: this.redactDlqData(event.data),
+        },
         error: error instanceof Error ? error.message : String(error),
         failedAt: new Date().toISOString(),
       };

@@ -75,9 +75,7 @@ export class SamlStrategyProvider extends PassportStrategy(SamlStrategy, 'saml')
           `SAML login denied: no active tenant for subject ${nameID}`,
         );
         return done(
-          new Error(
-            'No tenant is configured for your email domain. Contact your administrator.',
-          ),
+          new Error('Authentication failed. Contact your administrator.'),
         );
       }
 

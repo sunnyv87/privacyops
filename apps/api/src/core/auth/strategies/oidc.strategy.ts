@@ -88,9 +88,7 @@ export class OidcStrategy extends PassportStrategy(OpenIDConnectStrategy, 'oidc'
           `OIDC login denied: no active tenant with domain for subject ${externalId}`,
         );
         return done(
-          new Error(
-            'No tenant is configured for your email domain. Contact your administrator.',
-          ),
+          new Error('Authentication failed. Contact your administrator.'),
         );
       }
 

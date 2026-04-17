@@ -42,9 +42,11 @@ export class RateLimitGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
+    // Never trust raw X-Forwarded-For; use Express's req.ip which
+    // respects the app-level trust proxy setting, or fall back to the
+    // socket address.
     const ip =
       request.ip ||
-      request.headers['x-forwarded-for'] ||
       request.connection?.remoteAddress ||
       'unknown';
     const route = request.route?.path || request.url;

@@ -99,6 +99,12 @@ export class SessionService implements OnModuleDestroy {
     await pipeline.exec();
   }
 
+  async consumeOneTimeToken(tokenHash: string, ttlSeconds: number): Promise<boolean> {
+    const key = `otp_consumed:${tokenHash}`;
+    const wasSet = await this.redis.set(key, '1', 'EX', ttlSeconds, 'NX');
+    return wasSet === 'OK';
+  }
+
   async listUserSessions(userId: string): Promise<SessionData[]> {
     const userSessionsKey = `user_sessions:${userId}`;
     const sessionIds = await this.redis.smembers(userSessionsKey);

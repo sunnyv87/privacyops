@@ -68,7 +68,7 @@ export class AuthController {
 
     // No MFA — create session and return tokens
     const payload = this.authService.buildPayloadFromUser(user);
-    const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
     const sessionId = await this.sessionService.createSession(
       user.id,
@@ -104,11 +104,23 @@ export class AuthController {
     @Body() body: { mfaToken: string; code: string },
     @Req() req: Request,
   ) {
-    // Verify the MFA pending token
     const pendingPayload = this.authService.verifyToken(body.mfaToken);
 
     if (pendingPayload.type !== 'mfa_pending') {
       throw new UnauthorizedException('Invalid MFA token');
+    }
+
+    // Single-use enforcement: reject if this token has already been consumed
+    if (!pendingPayload.jti) {
+      throw new UnauthorizedException('Invalid MFA token');
+    }
+    const tokenHash = require('crypto')
+      .createHash('sha256')
+      .update(pendingPayload.jti)
+      .digest('hex');
+    const consumed = await this.sessionService.consumeOneTimeToken(tokenHash, 300);
+    if (!consumed) {
+      throw new UnauthorizedException('MFA token has already been used');
     }
 
     const user = await this.authService.validateUser(pendingPayload.sub);
@@ -155,7 +167,7 @@ export class AuthController {
     // MFA verified — create session and return tokens
     const payload = this.authService.buildPayloadFromUser(user);
     const mfaIp =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+      req.ip || req.connection?.remoteAddress || 'unknown';
     const mfaUa = req.headers['user-agent'] || 'unknown';
     const sessionId = await this.sessionService.createSession(
       user.id,
@@ -192,7 +204,7 @@ export class AuthController {
     @Req() req: Request,
   ) {
     const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+      req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
     const fingerprint = AuthService.deviceFingerprint(ip, userAgent);
 
@@ -261,6 +273,8 @@ export class AuthController {
 
   @Post('mfa/setup')
   @ApiBearerAuth()
+  @UseGuards(RateLimitGuard)
+  @RateLimit(5, 60)
   @ApiOperation({ summary: 'Generate TOTP secret for MFA setup' })
   async mfaSetup(@CurrentUser() user: any) {
     const dbUser = await this.prisma.user.findUnique({
@@ -291,6 +305,8 @@ export class AuthController {
   @Post('mfa/enable')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
+  @UseGuards(RateLimitGuard)
+  @RateLimit(5, 60)
   @ApiOperation({ summary: 'Enable MFA by verifying TOTP code' })
   async mfaEnable(
     @Body() body: { code: string },
@@ -341,7 +357,7 @@ export class AuthController {
     }
     const payload = this.authService.buildPayloadFromUser(dbUser);
     const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+      req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
     const newSessionId = await this.sessionService.createSession(
       user.id,
@@ -365,9 +381,11 @@ export class AuthController {
   @Post('mfa/disable')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
+  @UseGuards(RateLimitGuard)
+  @RateLimit(5, 60)
   @ApiOperation({ summary: 'Disable MFA (requires current TOTP code)' })
   async mfaDisable(
-    @Body() body: { code: string },
+    @Body() body: { code: string; password: string },
     @CurrentUser() user: any,
   ) {
     const dbUser = await this.prisma.user.findUnique({
@@ -376,6 +394,15 @@ export class AuthController {
 
     if (!dbUser?.mfaEnabled || !dbUser.mfaSecret) {
       throw new BadRequestException('MFA is not enabled');
+    }
+
+    // Step-up: require password re-confirmation before downgrading security
+    if (!body.password || !dbUser.passwordHash) {
+      throw new UnauthorizedException('Password required to disable MFA');
+    }
+    const passwordValid = await require('bcrypt').compare(body.password, dbUser.passwordHash);
+    if (!passwordValid) {
+      throw new UnauthorizedException('Invalid password');
     }
 
     const tenantForMfa = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
@@ -394,7 +421,10 @@ export class AuthController {
       },
     });
 
-    return { message: 'MFA disabled successfully' };
+    // Revoke all sessions — force re-authentication after security downgrade
+    await this.sessionService.revokeAllUserSessions(user.id);
+
+    return { message: 'MFA disabled successfully. Please log in again.' };
   }
 
   // ─── OIDC (Keycloak) ───────────────────────────────────────
@@ -414,7 +444,7 @@ export class AuthController {
   async oidcCallback(@Req() req: Request) {
     const userPayload = req.user as JwtPayload;
     const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+      req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
     const sessionId = await this.sessionService.createSession(
@@ -458,7 +488,7 @@ export class AuthController {
   async samlCallback(@Req() req: Request) {
     const userPayload = req.user as JwtPayload;
     const ip =
-      req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+      req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
     const sessionId = await this.sessionService.createSession(
@@ -496,7 +526,7 @@ export class AuthController {
 <EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
   entityID="privacyops-sp">
   <SPSSODescriptor
-    AuthnRequestsSigned="false"
+    AuthnRequestsSigned="true"
     WantAssertionsSigned="true"
     protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
     <NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</NameIDFormat>

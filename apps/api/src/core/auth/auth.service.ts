@@ -8,7 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from './services/session.service';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 export interface JwtPayload {
   sub: string; // user ID
@@ -20,7 +20,8 @@ export interface JwtPayload {
 }
 
 const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MINUTES = 15;
+const BASE_LOCKOUT_MINUTES = 15;
+const MAX_LOCKOUT_MINUTES = 24 * 60;
 
 @Injectable()
 export class AuthService {
@@ -92,13 +93,9 @@ export class AuthService {
       throw new ForbiddenException('Account is not active');
     }
 
-    // Check lockout
+    // Check lockout — use generic message to prevent user enumeration
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      const remainingMs = user.lockedUntil.getTime() - Date.now();
-      const remainingMin = Math.ceil(remainingMs / 60000);
-      throw new ForbiddenException(
-        `Account is locked. Try again in ${remainingMin} minute(s).`,
-      );
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     // Verify password
@@ -128,11 +125,17 @@ export class AuthService {
     const updateData: any = { failedLoginAttempts: newAttempts };
 
     if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+      // Exponential backoff: 15m, 30m, 60m, 120m, ... capped at 24h
+      const lockoutCycles = Math.floor((newAttempts - MAX_FAILED_ATTEMPTS) / MAX_FAILED_ATTEMPTS);
+      const lockoutMinutes = Math.min(
+        BASE_LOCKOUT_MINUTES * Math.pow(2, lockoutCycles),
+        MAX_LOCKOUT_MINUTES,
+      );
       updateData.lockedUntil = new Date(
-        Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000,
+        Date.now() + lockoutMinutes * 60 * 1000,
       );
       this.logger.warn(
-        `User ${userId} locked out after ${newAttempts} failed login attempts`,
+        `User ${userId} locked out after ${newAttempts} failed attempts (${lockoutMinutes}m)`,
       );
     }
 
@@ -158,8 +161,23 @@ export class AuthService {
    * User-Agent. A refresh token is bound to this fingerprint so it cannot
    * be replayed from an unrelated host.
    */
+  private static _deviceBindingSalt: string | undefined;
+
+  static getDeviceBindingSalt(): string {
+    if (!AuthService._deviceBindingSalt) {
+      const salt = process.env.DEVICE_BINDING_SALT;
+      if (!salt || salt.length < 16) {
+        throw new Error(
+          'DEVICE_BINDING_SALT must be set to a value of at least 16 characters',
+        );
+      }
+      AuthService._deviceBindingSalt = salt;
+    }
+    return AuthService._deviceBindingSalt!;
+  }
+
   static deviceFingerprint(ip: string, userAgent: string): string {
-    const salt = process.env.DEVICE_BINDING_SALT || 'privacyops-dev-binding';
+    const salt = AuthService.getDeviceBindingSalt();
     return createHash('sha256')
       .update(`${ip}|${userAgent}|${salt}`)
       .digest('hex')
@@ -264,7 +282,7 @@ export class AuthService {
 
   generateMfaPendingToken(userId: string, tenantId: string): string {
     return this.jwt.sign(
-      { sub: userId, tenantId, type: 'mfa_pending' },
+      { sub: userId, tenantId, type: 'mfa_pending', jti: randomUUID() },
       { expiresIn: '5m' },
     );
   }

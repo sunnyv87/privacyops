@@ -53,6 +53,8 @@ const PRISMA_MODEL_MAP: Record<string, string> = {
   ApprovalRequest: 'approvalRequest',
 };
 
+const TENANT_EXEMPT_MODELS = new Set(['Tenant', 'Role', 'Plan']);
+
 @Injectable()
 export class AbacGuard implements CanActivate {
   private readonly logger = new Logger(AbacGuard.name);
@@ -159,7 +161,11 @@ export class AbacGuard implements CanActivate {
     resource.id = resourceId;
 
     // Attempt to load the resource from Prisma to enrich context
-    const loaded = await this.loadResource(meta.resourceType, resourceId);
+    const loaded = await this.loadResource(
+      meta.resourceType,
+      resourceId,
+      request.user?.tenantId,
+    );
 
     if (loaded) {
       resource.tenantId = loaded.tenantId ?? undefined;
@@ -195,11 +201,14 @@ export class AbacGuard implements CanActivate {
   }
 
   /**
-   * Load a resource from Prisma by type and ID.
+   * Load a resource from Prisma by type and ID, scoped to the requesting
+   * user's tenant. We never rely solely on RLS because the session variable
+   * may not be set on this connection.
    */
   private async loadResource(
     resourceType: string,
     id: string,
+    tenantId?: string,
   ): Promise<any | null> {
     const modelName = PRISMA_MODEL_MAP[resourceType];
     if (!modelName) {
@@ -210,15 +219,20 @@ export class AbacGuard implements CanActivate {
     }
 
     const delegate = (this.prisma as any)[modelName];
-    if (!delegate?.findUnique) {
+    if (!delegate?.findFirst) {
       this.logger.warn(
-        `Prisma delegate "${modelName}" does not support findUnique`,
+        `Prisma delegate "${modelName}" does not support findFirst`,
       );
       return null;
     }
 
     try {
-      return await delegate.findUnique({ where: { id } });
+      const where: Record<string, unknown> = { id };
+      // Tenant-scoped models get an explicit filter (defense in depth over RLS)
+      if (tenantId && !TENANT_EXEMPT_MODELS.has(resourceType)) {
+        where.tenantId = tenantId;
+      }
+      return await delegate.findFirst({ where });
     } catch (err) {
       this.logger.warn(
         `Failed to load ${resourceType}(${id}): ${(err as Error).message}`,

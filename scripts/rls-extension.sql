@@ -145,6 +145,42 @@ BEGIN
 END $$;
 
 -- ----------------------------------------------------------------------------
+-- 3b. audit_logs and security_events — were previously missing from RLS
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  tbl TEXT;
+  policy_name TEXT;
+  security_tables TEXT[] := ARRAY['audit_logs', 'security_events'];
+BEGIN
+  FOREACH tbl IN ARRAY security_tables LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = tbl
+    ) THEN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+      EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+
+      policy_name := 'tenant_isolation_' || tbl;
+
+      IF EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = tbl AND policyname = policy_name
+      ) THEN
+        EXECUTE format('DROP POLICY %I ON %I', policy_name, tbl);
+      END IF;
+
+      EXECUTE format(
+        'CREATE POLICY %I ON %I
+           USING (tenant_id = current_tenant_id() OR is_platform_admin())
+           WITH CHECK (tenant_id = current_tenant_id())',
+        policy_name, tbl
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ----------------------------------------------------------------------------
 -- 4. SaaS tenant-scoped tables (billing / usage / licensing / onboarding)
 --    Plan / PlanFeature / PlanLimit are intentionally NOT RLS-protected —
 --    they are the public catalogue.

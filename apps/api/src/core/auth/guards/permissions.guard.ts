@@ -86,7 +86,7 @@ export class PermissionsGuard implements CanActivate {
   /**
    * Check if the user's permission array satisfies a required permission.
    * Supports wildcard permissions:
-   *   - 'dspm:*' matches 'dspm:read', 'dspm:write', etc.
+   *   - 'dspm:*' matches 'dspm:read' but NOT 'dspm:admin:reset' (single-level)
    *   - '*' matches everything
    *   - Exact match: 'classification:read' matches 'classification:read'
    */
@@ -94,17 +94,24 @@ export class PermissionsGuard implements CanActivate {
     userPermissions: string[],
     required: string,
   ): boolean {
+    const requiredLower = required.toLowerCase();
     for (const perm of userPermissions) {
-      // Exact match
-      if (perm === required) return true;
+      const permLower = perm.toLowerCase();
+
+      // Exact match (case-insensitive)
+      if (permLower === requiredLower) return true;
 
       // Superadmin wildcard
-      if (perm === '*') return true;
+      if (permLower === '*') return true;
 
-      // Namespace wildcard (e.g. 'dspm:*' matches 'dspm:read')
-      if (perm.endsWith(':*')) {
-        const namespace = perm.slice(0, -1); // 'dspm:'
-        if (required.startsWith(namespace)) return true;
+      // Single-level namespace wildcard: 'dspm:*' matches 'dspm:read'
+      // but NOT 'dspm:admin:reset' — wildcard spans one segment only.
+      if (permLower.endsWith(':*')) {
+        const namespace = permLower.slice(0, -1); // 'dspm:'
+        if (requiredLower.startsWith(namespace)) {
+          const remainder = requiredLower.slice(namespace.length);
+          if (!remainder.includes(':')) return true;
+        }
       }
     }
     return false;

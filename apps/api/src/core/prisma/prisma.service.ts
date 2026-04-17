@@ -30,9 +30,9 @@ export class PrismaService
     (this as any).$on('query', (e: any) => {
       const duration = e.duration ?? 0;
       if (duration > SLOW_QUERY_THRESHOLD_MS) {
-        this.logger.warn(
-          `Slow query (${duration}ms): ${String(e.query).slice(0, 200)}`,
-        );
+        const rawQuery = String(e.query ?? '');
+        const safeQuery = rawQuery.replace(/\$\d+/g, '?').slice(0, 200);
+        this.logger.warn(`Slow query (${duration}ms): ${safeQuery}`);
       }
     });
 
@@ -52,18 +52,26 @@ export class PrismaService
   private static readonly UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+  private _requestTenantId: string | null = null;
+
   /**
    * Set the current tenant context for Row Level Security.
-   * Uses set_config with parameterized value to prevent SQL injection.
+   * Stores the tenant ID so withTenantScope can apply it per-transaction.
+   * Also sets it on the current connection as a best-effort measure.
    */
   async setTenantContext(tenantId: string): Promise<void> {
     if (!PrismaService.UUID_RE.test(tenantId)) {
       throw new Error('Invalid tenant ID format');
     }
+    this._requestTenantId = tenantId;
     await this.$executeRawUnsafe(
       `SELECT set_config('app.current_tenant', $1, false)`,
       tenantId,
     );
+  }
+
+  get currentTenantId(): string | null {
+    return this._requestTenantId;
   }
 
   /**

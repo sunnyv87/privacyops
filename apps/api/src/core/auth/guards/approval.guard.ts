@@ -108,6 +108,30 @@ export class ApprovalGuard implements CanActivate {
     user: any,
     request: any,
   ): Promise<boolean> {
+    // Load and validate the approval BEFORE executing — tenant and ownership
+    // checks must pass first to prevent cross-tenant approval forging.
+    const approval = await this.approvalService.findById(approvalId);
+    if (!approval) {
+      throw new ForbiddenException('Approval request not found');
+    }
+
+    if (approval.tenantId !== user.tenantId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    if (approval.requesterId !== user.id) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    if (approval.action !== action) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    if (approval.resourceId !== resourceId && resourceId !== 'unknown') {
+      throw new ForbiddenException('Access denied');
+    }
+
+    // Only now mark as executed — all checks passed
     const isApproved =
       await this.approvalService.executeIfApproved(approvalId);
 
@@ -115,37 +139,6 @@ export class ApprovalGuard implements CanActivate {
       throw new ForbiddenException(
         'Approval request is not approved, has expired, or does not exist',
       );
-    }
-
-    // Verify the approval matches the current request
-    const approval = await this.approvalService.findById(approvalId);
-    if (!approval) {
-      throw new ForbiddenException('Approval request not found');
-    }
-
-    // Ensure the approval is for the same action and resource
-    if (approval.action !== action) {
-      throw new ForbiddenException(
-        `Approval action mismatch: expected "${action}", got "${approval.action}"`,
-      );
-    }
-
-    if (approval.resourceId !== resourceId && resourceId !== 'unknown') {
-      throw new ForbiddenException(
-        'Approval resource ID does not match the request',
-      );
-    }
-
-    // Ensure the requester is the same user
-    if (approval.requesterId !== user.id) {
-      throw new ForbiddenException(
-        'Approval was requested by a different user',
-      );
-    }
-
-    // Ensure the approval is within the same tenant
-    if (approval.tenantId !== user.tenantId) {
-      throw new ForbiddenException('Approval tenant mismatch');
     }
 
     // Log the approved execution

@@ -141,6 +141,12 @@ async function bootstrap() {
   // Global exception filter
   app.useGlobalFilters(new GlobalExceptionFilter());
 
+  // Global pagination cap — prevent unbounded page_size from any endpoint
+  const { PaginationInterceptor } = await import(
+    './core/security/pagination.interceptor'
+  );
+  app.useGlobalInterceptors(new PaginationInterceptor());
+
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({

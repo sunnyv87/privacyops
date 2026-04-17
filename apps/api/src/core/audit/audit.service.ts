@@ -570,7 +570,8 @@ export class AuditService implements OnModuleInit {
       pageSize?: number;
     },
   ) {
-    const { page = 1, pageSize = 50, ...where } = filters;
+    const { page = 1, pageSize: rawPageSize = 50, ...where } = filters;
+    const pageSize = Math.min(Math.max(rawPageSize, 1), 100);
 
     const whereClause: any = {
       tenantId,

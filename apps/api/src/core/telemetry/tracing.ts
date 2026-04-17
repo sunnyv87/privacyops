@@ -40,9 +40,12 @@ export function initTracing(): void {
     spanProcessors: [new BatchSpanProcessor(exporter)],
     instrumentations: [
       getNodeAutoInstrumentations({
-        // Disable fs instrumentation — too noisy
         '@opentelemetry/instrumentation-fs': { enabled: false },
         '@opentelemetry/instrumentation-dns': { enabled: false },
+        '@opentelemetry/instrumentation-pg': {
+          addSqlCommenterComment: false,
+          enhancedDatabaseReporting: false,
+        },
       }),
     ],
   });

@@ -28,7 +28,10 @@ import { JwtService } from '@nestjs/jwt';
 @WebSocketGateway({
   namespace: '/workflows',
   cors: {
-    origin: (process.env.CORS_ORIGINS || 'http://localhost:3000').split(','),
+    origin: (process.env.CORS_ORIGINS || 'http://localhost:3000')
+      .split(',')
+      .map((o: string) => o.trim())
+      .filter((o: string) => o.length > 0),
     credentials: true,
   },
 })

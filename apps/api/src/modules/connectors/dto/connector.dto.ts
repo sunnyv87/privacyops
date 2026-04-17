@@ -6,7 +6,32 @@ import {
   IsObject,
   IsArray,
   ValidateNested,
+  MaxLength,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
+
+@ValidatorConstraint({ name: 'maxJsonDepth', async: false })
+class MaxJsonDepth implements ValidatorConstraintInterface {
+  validate(value: unknown) {
+    return this.checkDepth(value, 0);
+  }
+
+  private checkDepth(obj: unknown, depth: number): boolean {
+    if (depth > 5) return false;
+    if (obj && typeof obj === 'object') {
+      return Object.values(obj as Record<string, unknown>).every((v) =>
+        this.checkDepth(v, depth + 1),
+      );
+    }
+    return true;
+  }
+
+  defaultMessage() {
+    return 'Config object exceeds maximum nesting depth of 5';
+  }
+}
 
 export enum DataSourceTypeEnum {
   AWS_S3 = 'aws_s3',
@@ -82,6 +107,7 @@ export class CreateConnectorDto {
 
   @ApiProperty({ description: 'Connection configuration (encrypted at rest)' })
   @IsObject()
+  @Validate(MaxJsonDepth)
   config: Record<string, any>;
 
   @ApiPropertyOptional({ description: 'Cron schedule for automated scans' })

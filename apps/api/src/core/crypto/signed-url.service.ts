@@ -108,6 +108,7 @@ export class SignedUrlService implements OnModuleInit {
     requestId: string,
   ): Promise<string> {
     const objectKey = `tenants/${tenantId}/dsar/${requestId}/package.zip`;
-    return this.generateDownloadUrl(this.defaultBucket, objectKey);
+    // DSAR packages contain personal data — use a short-lived URL (5 minutes)
+    return this.generateDownloadUrl(this.defaultBucket, objectKey, 300);
   }
 }

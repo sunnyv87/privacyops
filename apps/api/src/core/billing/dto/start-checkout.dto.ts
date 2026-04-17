@@ -1,4 +1,23 @@
-import { IsNotEmpty, IsString, IsUrl, Matches } from 'class-validator';
+import { IsNotEmpty, IsString, IsUrl, Matches, Validate, ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments } from 'class-validator';
+
+@ValidatorConstraint({ name: 'isSameOriginUrl', async: false })
+class IsSameOriginUrl implements ValidatorConstraintInterface {
+  validate(value: string, _args: ValidationArguments) {
+    try {
+      const parsed = new URL(value);
+      const allowedOrigin = process.env.APP_URL || process.env.FRONTEND_URL;
+      if (!allowedOrigin) return true;
+      const allowed = new URL(allowedOrigin);
+      return parsed.origin === allowed.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  defaultMessage() {
+    return 'URL must match the application origin';
+  }
+}
 
 export class StartCheckoutDto {
   /**
@@ -12,8 +31,10 @@ export class StartCheckoutDto {
   planCode!: string;
 
   @IsUrl({ require_tld: false })
+  @Validate(IsSameOriginUrl)
   successUrl!: string;
 
   @IsUrl({ require_tld: false })
+  @Validate(IsSameOriginUrl)
   cancelUrl!: string;
 }

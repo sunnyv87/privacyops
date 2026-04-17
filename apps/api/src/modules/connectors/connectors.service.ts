@@ -78,7 +78,8 @@ export class ConnectorsService {
     tenantId: string,
     filters?: { type?: string; status?: string; page?: number; pageSize?: number },
   ) {
-    const { page = 1, pageSize = 20, ...where } = filters || {};
+    const { page = 1, pageSize: rawPageSize = 20, ...where } = filters || {};
+    const pageSize = Math.min(Math.max(rawPageSize, 1), 100);
 
     const [data, total] = await Promise.all([
       this.prisma.dataSource.findMany({
@@ -253,7 +254,6 @@ export class ConnectorsService {
       });
 
       if (result.success) {
-        // Count each successful connector sync against the tenant's quota.
         this.metering.record(tenantId, 'connector_sync', 1, {
           source: 'connectors.testConnection',
           metadata: { connectorId: id, type: source.type },
@@ -261,8 +261,21 @@ export class ConnectorsService {
       }
 
       return result;
+    } catch (err) {
+      this.logger.error(
+        `Connector test failed for ${source.type}(${id}): ${(err as Error).message}`,
+      );
+      await this.prisma.dataSource.update({
+        where: { id },
+        data: { status: 'error' },
+      });
+      // Return a sanitized error — never expose driver stack traces, hostnames, or credentials
+      return {
+        success: false,
+        message: 'Connection test failed. Check credentials and network configuration.',
+      };
     } finally {
-      await connector.disconnect();
+      try { await connector.disconnect(); } catch { /* best-effort */ }
     }
   }
 

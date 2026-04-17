@@ -109,10 +109,19 @@ export class KmsService implements OnModuleInit {
    *    tenants are domain-separated even if they somehow share salt/master.
    */
   private async deriveTenantKey(keyId: string, salt?: Buffer): Promise<Buffer> {
-    // Salt: caller may provide one (from TenantKey table). Otherwise derive
-    // a deterministic-but-domain-separated fallback from the keyId. This
-    // preserves backwards compatibility with existing ciphertexts until a
-    // migration re-wraps them under a random-salt key.
+    // Salt: caller provides a random per-tenant salt from the TenantKey table.
+    // If missing, fall back to a deterministic salt derived from keyId (preserves
+    // backwards compat). Production deployments should migrate all tenants to
+    // random salts.
+    if (!salt) {
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      if (nodeEnv === 'production') {
+        this.logger.warn(
+          `HKDF derivation for keyId=${keyId} using deterministic fallback salt — ` +
+            'migrate tenant to a random salt via the key-rotation runbook',
+        );
+      }
+    }
     const effectiveSalt =
       salt ??
       crypto.createHash('sha256').update(`privacyops-hkdf-salt|${keyId}`).digest();

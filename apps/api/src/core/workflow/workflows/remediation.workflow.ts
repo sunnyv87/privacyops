@@ -1,5 +1,6 @@
-import { proxyActivities } from '@temporalio/workflow';
+import { proxyActivities, setHandler, condition } from '@temporalio/workflow';
 import type * as activities from '../activities/approval.activities';
+import { remediationApprovalSignal, DecisionSignalPayload } from '../signals';
 
 const {
   validateFinding,
@@ -15,6 +16,8 @@ const {
   retry: { maximumAttempts: 3, backoffCoefficient: 2 },
 });
 
+const APPROVAL_SIGNAL_TIMEOUT_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
 interface RemediationInput {
   findingId: string;
   tenantId: string;
@@ -25,6 +28,12 @@ export async function remediationWorkflow(input: RemediationInput): Promise<{
   status: string;
   remediationId: string;
 }> {
+  // Signal handler for approval decision
+  let signalPayload: DecisionSignalPayload | null = null;
+  setHandler(remediationApprovalSignal, (p) => {
+    signalPayload = p;
+  });
+
   // Step 1: Validate the finding exists and is actionable
   const finding = await validateFinding({
     tenantId: input.tenantId,
@@ -42,11 +51,21 @@ export async function remediationWorkflow(input: RemediationInput): Promise<{
     actionType: input.actionType,
   });
 
-  // Step 3: Await approval of the proposed action
-  const approval = await awaitApproval({
-    tenantId: input.tenantId,
-    proposalId: proposal.proposalId,
-  });
+  // Step 3: Await approval — prefer signal, fall back to DB poll.
+  const gotSignal = await condition(
+    () => signalPayload !== null,
+    APPROVAL_SIGNAL_TIMEOUT_MS,
+  );
+  let approval: { approved: boolean };
+  if (gotSignal && signalPayload) {
+    const sp = signalPayload as DecisionSignalPayload;
+    approval = { approved: sp.decision === 'approved' };
+  } else {
+    approval = await awaitApproval({
+      tenantId: input.tenantId,
+      proposalId: proposal.proposalId,
+    });
+  }
 
   if (!approval.approved) {
     return { status: 'rejected', remediationId: proposal.proposalId };

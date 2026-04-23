@@ -6,6 +6,7 @@ import {
   GetBucketAclCommand,
   GetPublicAccessBlockCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import {
   ConnectorConfig,
@@ -16,6 +17,7 @@ import {
   SampleOptions,
   AccessPolicy,
   ConnectorMetadata,
+  DisposalResult,
 } from '../interfaces/connector.interface';
 import { BaseConnector } from '../sdk/base-connector';
 
@@ -305,6 +307,62 @@ export class AwsS3Connector extends BaseConnector {
         supportsEncryptionCheck: true,
       },
     };
+  }
+
+  /**
+   * Native S3 disposal. Only `delete` is supported; `anonymize` and
+   * `archive` return `unsupported` so the caller falls back to the
+   * metadata-only path.
+   *
+   * Gated behind the per-connector option `enableNativeDisposal: true`
+   * (supplied via ConnectorConfig.options). By default returns
+   * `skipped` even if the action would be supported — this prevents
+   * an accidental catalog-wide deletion on an un-audited connector.
+   *
+   * When S3 versioning is enabled on the bucket, DeleteObject creates
+   * a delete-marker and the prior version remains recoverable. When
+   * versioning is OFF, the deletion is permanent. The action result
+   * surfaces both facts for the audit log.
+   */
+  async disposeAsset(
+    assetExternalId: string,
+    action: 'delete' | 'anonymize' | 'archive',
+  ): Promise<DisposalResult> {
+    if (action !== 'delete') {
+      return { action: 'unsupported', details: { reason: `${action} not applicable for S3 objects` } };
+    }
+    const opts: any = (this as any).config?.options ?? {};
+    if (!opts.enableNativeDisposal) {
+      return {
+        action: 'skipped',
+        details: { reason: 'enableNativeDisposal not set on connector config' },
+      };
+    }
+    const { bucket, key } = this.parseS3Path(assetExternalId);
+    if (!bucket || !key) {
+      return { action: 'unsupported', details: { reason: 'bucket/key parse failed', assetExternalId } };
+    }
+    try {
+      const response = await this.withRetry(
+        () => this.client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
+        'DeleteObject',
+      );
+      return {
+        action: 'deleted',
+        nativeOperation: 'DeleteObject',
+        details: {
+          bucket,
+          key,
+          versionId: (response as any)?.VersionId ?? null,
+          deleteMarker: (response as any)?.DeleteMarker ?? false,
+        },
+      };
+    } catch (err) {
+      return {
+        action: 'unsupported',
+        details: { reason: (err as Error).message, bucket, key },
+      };
+    }
   }
 
   // ── Private helpers ──────────────────────────────────────────

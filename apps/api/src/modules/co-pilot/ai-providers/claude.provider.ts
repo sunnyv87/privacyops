@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AIProvider } from './ai-provider.interface';
 import { RedactionService } from '../../redaction-engine/redaction.service';
+import { PrometheusService } from '@/core/telemetry/prometheus.service';
 
 /**
  * ClaudeAIProvider — Anthropic adapter. Activated when ANTHROPIC_API_KEY
@@ -37,6 +38,7 @@ export class ClaudeAIProvider implements AIProvider {
   constructor(
     private readonly config: ConfigService,
     @Optional() private readonly redaction?: RedactionService,
+    @Optional() private readonly prometheus?: PrometheusService,
   ) {
     this.apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     this.model = this.config.get<string>('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001');
@@ -95,9 +97,15 @@ export class ClaudeAIProvider implements AIProvider {
     }
   }
 
-  private async callClaude(systemPrompt: string, userPrompt: string): Promise<string | null> {
+  private async callClaude(
+    systemPrompt: string,
+    userPrompt: string,
+    method = 'summarize',
+    tenantId = 'unknown',
+  ): Promise<string | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const startMs = Date.now();
     try {
       if (!this.sdk) {
         const mod = await import('@anthropic-ai/sdk').catch(() => null);
@@ -120,16 +128,41 @@ export class ClaudeAIProvider implements AIProvider {
       const block = response?.content?.[0];
       if (block && block.type === 'text' && typeof block.text === 'string') {
         this.recordSuccess();
+        this.emitMetric(tenantId, method, 'success', startMs);
         return block.text.trim();
       }
       this.recordFailure();
+      this.emitMetric(tenantId, method, 'empty', startMs);
       return null;
     } catch (err) {
       this.recordFailure();
+      this.emitMetric(tenantId, method, 'error', startMs);
       this.logger.warn(`Claude provider call failed: ${(err as Error).message}`);
       return null;
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  private emitMetric(tenantId: string, method: string, status: string, startMs: number): void {
+    if (!this.prometheus) return;
+    try {
+      this.prometheus.aiCallTotal.inc({
+        tenant_id: tenantId,
+        provider: this.name,
+        method,
+        status,
+      });
+      this.prometheus.aiCallDuration.observe(
+        { tenant_id: tenantId, provider: this.name, method },
+        (Date.now() - startMs) / 1000,
+      );
+      this.prometheus.aiCircuitState.set(
+        { provider: this.name },
+        Date.now() < this.circuitOpenUntil ? 1 : 0,
+      );
+    } catch {
+      // Never let metrics errors propagate to the caller.
     }
   }
 

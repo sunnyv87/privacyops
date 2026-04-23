@@ -10,6 +10,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AttackPathsService } from './attack-paths.service';
 import { AttackPathAnalyzer } from './attack-path-analyzer';
+import { NarrativeService } from '@/modules/co-pilot/narrative.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import { RequireFeature } from '@/core/licensing/decorators/require-feature.decorator';
@@ -23,6 +24,7 @@ export class AttackPathsController {
   constructor(
     private readonly attackPathsService: AttackPathsService,
     private readonly attackPathAnalyzer: AttackPathAnalyzer,
+    private readonly narrative: NarrativeService,
   ) {}
 
   @Get()
@@ -57,8 +59,13 @@ export class AttackPathsController {
   async getAttackPathById(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
+    @Query('withNarrative') withNarrative?: string,
   ) {
     const path = await this.attackPathsService.getAttackPathById(tenantId, id);
+    if (withNarrative === 'true' && path) {
+      const narrative = await this.narrative.explainAttackPath(path as any);
+      return { data: { ...(path as any), narrative } };
+    }
     return { data: path };
   }
 

@@ -5,8 +5,10 @@ import { RiskIntelligenceService } from './risk-intelligence.service';
 import { RiskIntelligenceController } from './risk-intelligence.controller';
 import { PredictiveRiskService } from './predictive-risk.service';
 import { PredictiveRiskController } from './predictive-risk.controller';
+import { CoPilotModule } from '@/modules/co-pilot/co-pilot.module';
 
 @Module({
+  imports: [CoPilotModule],
   controllers: [DspmController, RiskIntelligenceController, PredictiveRiskController],
   providers: [DspmService, RiskIntelligenceService, PredictiveRiskService],
   exports: [DspmService, RiskIntelligenceService, PredictiveRiskService],

@@ -152,6 +152,12 @@ export type AssetType =
   | 'vault'
   | 'safe';
 
+export interface DisposalResult {
+  action: 'deleted' | 'anonymized' | 'archived' | 'unsupported' | 'skipped';
+  nativeOperation?: string; // e.g., 'DeleteObject', 'TRUNCATE'
+  details?: Record<string, unknown>;
+}
+
 /**
  * The interface every connector must implement.
  */
@@ -169,6 +175,18 @@ export interface IConnector {
   ): AsyncGenerator<ContentSample>;
 
   getAccessPolicies?(assetExternalId: string): Promise<AccessPolicy[]>;
+
+  /**
+   * OPTIONAL. Native disposal of an asset in the source system.
+   * Connectors that don't implement this fall back to metadata-only
+   * disposal in the retention activity. Implementations MUST be
+   * idempotent and return `{ action: 'unsupported' }` when the
+   * operation is not applicable rather than throwing.
+   */
+  disposeAsset?(
+    assetExternalId: string,
+    action: 'delete' | 'anonymize' | 'archive',
+  ): Promise<DisposalResult>;
 
   getMetadata(): ConnectorMetadata;
 }

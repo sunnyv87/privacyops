@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { VendorsService } from './vendors.service';
+import { WorkflowService } from '@/core/workflow/workflow.service';
+import { SIGNAL_NAMES } from '@/core/workflow/signals';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import {
@@ -21,7 +23,10 @@ import {
 @ApiBearerAuth()
 @Controller('vendors')
 export class VendorsController {
-  constructor(private readonly vendorsService: VendorsService) {}
+  constructor(
+    private readonly vendorsService: VendorsService,
+    private readonly workflows: WorkflowService,
+  ) {}
 
   @Post()
   @RequirePermissions('vendors:vendors:create')
@@ -184,4 +189,32 @@ export class VendorsController {
     return { data: vendor };
   }
 
+  // ---------------------------------------------------------------------------
+  // Temporal signal: submit vendor questionnaire response to running workflow
+  // ---------------------------------------------------------------------------
+
+  @Post('assessments/:assessmentId/signal-response')
+  @RequirePermissions('vendors:assessments:update')
+  @ApiOperation({
+    summary:
+      'Signal vendor questionnaire answers to the running vendor review workflow',
+  })
+  async signalVendorResponse(
+    @CurrentUser('tenantId') _tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('assessmentId') assessmentId: string,
+    @Body() body: { answers: Record<string, unknown> },
+  ) {
+    const workflowId = `vendor-review-${assessmentId}`;
+    const sent = await this.workflows.signalWorkflow(
+      workflowId,
+      SIGNAL_NAMES.VENDOR_RESPONSE,
+      {
+        answers: body.answers,
+        submittedBy: userId,
+        submittedAt: new Date().toISOString(),
+      },
+    );
+    return { data: { signaled: sent, workflowId } };
+  }
 }

@@ -267,4 +267,32 @@ export class WorkflowService {
       return null;
     }
   }
+
+  /**
+   * Send a signal to a running workflow. Non-destructive: if Temporal is
+   * unavailable or the workflow has already closed, returns false and
+   * logs rather than throwing so the calling REST endpoint can respond
+   * with a clean 4xx/5xx status.
+   */
+  async signalWorkflow(
+    workflowId: string,
+    signalName: string,
+    payload: unknown,
+  ): Promise<boolean> {
+    if (!this.temporal.isConnected) {
+      this.logger.warn(`signalWorkflow: Temporal not connected; ${signalName} dropped for ${workflowId}`);
+      return false;
+    }
+    try {
+      const handle = this.temporal.client.workflow.getHandle(workflowId);
+      await handle.signal(signalName, payload);
+      this.logger.log(`Signal ${signalName} sent to workflow ${workflowId}`);
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `Failed to signal ${signalName} to ${workflowId}: ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
 }

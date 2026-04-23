@@ -1,5 +1,6 @@
-import { proxyActivities } from '@temporalio/workflow';
+import { proxyActivities, setHandler, condition } from '@temporalio/workflow';
 import type * as activities from '../activities/vendor.activities';
+import { vendorResponseSignal, VendorResponseSignalPayload } from '../signals';
 
 const {
   prepareAssessment,
@@ -14,6 +15,8 @@ const {
   retry: { maximumAttempts: 3, backoffCoefficient: 2 },
 });
 
+const VENDOR_RESPONSE_SIGNAL_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 interface VendorReviewInput {
   vendorId: string;
   assessmentId: string;
@@ -25,6 +28,12 @@ export async function vendorReviewWorkflow(input: VendorReviewInput): Promise<{
   status: string;
   score: number;
 }> {
+  // Signal handler for vendor response submission
+  let signalPayload: VendorResponseSignalPayload | null = null;
+  setHandler(vendorResponseSignal, (p) => {
+    signalPayload = p;
+  });
+
   // Step 1: Prepare the vendor assessment
   const assessment = await prepareAssessment({
     tenantId: input.tenantId,
@@ -40,12 +49,22 @@ export async function vendorReviewWorkflow(input: VendorReviewInput): Promise<{
     dueDate: input.dueDate,
   });
 
-  // Step 3: Await vendor response
-  const response = await awaitVendorResponse({
-    tenantId: input.tenantId,
-    vendorId: input.vendorId,
-    assessmentId: input.assessmentId,
-  });
+  // Step 3: Await vendor response — prefer signal, fall back to DB poll.
+  const gotSignal = await condition(
+    () => signalPayload !== null,
+    VENDOR_RESPONSE_SIGNAL_TIMEOUT_MS,
+  );
+  let response: { answers: Record<string, unknown> };
+  if (gotSignal && signalPayload) {
+    const sp = signalPayload as VendorResponseSignalPayload;
+    response = { answers: sp.answers };
+  } else {
+    response = await awaitVendorResponse({
+      tenantId: input.tenantId,
+      vendorId: input.vendorId,
+      assessmentId: input.assessmentId,
+    });
+  }
 
   // Step 4: Review the vendor responses
   const review = await reviewResponses({

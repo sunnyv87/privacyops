@@ -8,6 +8,9 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { RemediationService } from './remediation.service';
+import { WorkflowService } from '@/core/workflow/workflow.service';
+import { SIGNAL_NAMES } from '@/core/workflow/signals';
+import { NarrativeService } from '@/modules/co-pilot/narrative.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import { ProposeActionDto } from './dto/remediation.dto';
@@ -16,7 +19,11 @@ import { ProposeActionDto } from './dto/remediation.dto';
 @ApiBearerAuth()
 @Controller('remediation')
 export class RemediationController {
-  constructor(private readonly remediationService: RemediationService) {}
+  constructor(
+    private readonly remediationService: RemediationService,
+    private readonly workflows: WorkflowService,
+    private readonly narrative: NarrativeService,
+  ) {}
 
   @Post('propose')
   @RequirePermissions('dspm:remediation:create')
@@ -97,8 +104,44 @@ export class RemediationController {
   async findById(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
+    @Query('withNarrative') withNarrative?: string,
   ) {
     const action = await this.remediationService.findById(tenantId, id);
-    return { data: action };
+    // Optional narrative enrichment — opt-in to preserve existing shape.
+    let narrative: string | undefined;
+    if (withNarrative === 'true' && action) {
+      narrative = await this.narrative.explainRemediation(action as any);
+    }
+    return { data: narrative ? { ...(action as any), narrative } : action };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Temporal signal: submit approval decision to running remediation workflow
+  // ---------------------------------------------------------------------------
+
+  @Post(':findingId/signal-approval')
+  @RequirePermissions('dspm:remediation:update')
+  @ApiOperation({
+    summary:
+      'Signal approval/rejection to the running remediation workflow for this finding',
+  })
+  async signalRemediationApproval(
+    @CurrentUser('tenantId') _tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('findingId') findingId: string,
+    @Body() body: { decision: 'approved' | 'rejected'; comments?: string },
+  ) {
+    const workflowId = `remediation-${findingId}`;
+    const sent = await this.workflows.signalWorkflow(
+      workflowId,
+      SIGNAL_NAMES.REMEDIATION_APPROVAL,
+      {
+        decision: body.decision,
+        comments: body.comments,
+        decidedBy: userId,
+        decidedAt: new Date().toISOString(),
+      },
+    );
+    return { data: { signaled: sent, workflowId } };
   }
 }

@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AssessmentsService } from './assessments.service';
+import { WorkflowService } from '@/core/workflow/workflow.service';
+import { SIGNAL_NAMES } from '@/core/workflow/signals';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import {
@@ -21,7 +23,10 @@ import {
 @ApiBearerAuth()
 @Controller('assessments')
 export class AssessmentsController {
-  constructor(private readonly assessmentsService: AssessmentsService) {}
+  constructor(
+    private readonly assessmentsService: AssessmentsService,
+    private readonly workflows: WorkflowService,
+  ) {}
 
   @Post()
   @RequirePermissions('assessments:assessments:create')
@@ -193,5 +198,35 @@ export class AssessmentsController {
       id,
     );
     return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Temporal signal: submit DPIA review decision to running workflow
+  // ---------------------------------------------------------------------------
+
+  @Post(':assessmentId/signal-decision')
+  @RequirePermissions('assessments:assessments:update')
+  @ApiOperation({
+    summary:
+      'Signal a decision to the running DPIA approval workflow for this assessment',
+  })
+  async signalDpiaDecision(
+    @CurrentUser('tenantId') _tenantId: string,
+    @CurrentUser('id') userId: string,
+    @Param('assessmentId') assessmentId: string,
+    @Body() body: { decision: 'approved' | 'rejected'; comments?: string },
+  ) {
+    const workflowId = `dpia-approval-${assessmentId}`;
+    const sent = await this.workflows.signalWorkflow(
+      workflowId,
+      SIGNAL_NAMES.DPIA_DECISION,
+      {
+        decision: body.decision,
+        comments: body.comments,
+        decidedBy: userId,
+        decidedAt: new Date().toISOString(),
+      },
+    );
+    return { data: { signaled: sent, workflowId } };
   }
 }

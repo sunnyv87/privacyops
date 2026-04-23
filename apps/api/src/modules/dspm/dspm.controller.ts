@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DspmService } from './dspm.service';
+import { NarrativeService } from '@/modules/co-pilot/narrative.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import { FindingFilterDto, UpdateFindingStatusDto } from './dto/dspm.dto';
@@ -17,7 +18,10 @@ import { FindingFilterDto, UpdateFindingStatusDto } from './dto/dspm.dto';
 @ApiBearerAuth()
 @Controller('dspm')
 export class DspmController {
-  constructor(private readonly dspmService: DspmService) {}
+  constructor(
+    private readonly dspmService: DspmService,
+    private readonly narrative: NarrativeService,
+  ) {}
 
   @Get('findings')
   @RequirePermissions('dspm:findings:read')
@@ -49,8 +53,14 @@ export class DspmController {
   async findFindingById(
     @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
+    @Query('withNarrative') withNarrative?: string,
   ) {
     const finding = await this.dspmService.findFindingById(tenantId, id);
+    // Opt-in narrative enrichment — default response shape unchanged.
+    if (withNarrative === 'true' && finding) {
+      const narrative = await this.narrative.explainRisk(finding as any);
+      return { data: { ...(finding as any), narrative } };
+    }
     return { data: finding };
   }
 

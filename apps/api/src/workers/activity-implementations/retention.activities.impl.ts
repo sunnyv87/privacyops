@@ -9,6 +9,8 @@ import { Logger as NestLogger } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../../core/audit/audit.service';
 import { EventBusService } from '../../core/events/event-bus.service';
+import { ConnectorRegistry } from '../../modules/connectors/connector-registry';
+import { CryptoService } from '../../core/crypto/crypto.service';
 
 export interface RetentionActivities {
   findExpiredAssets(input: { tenantId: string; policyId: string }): Promise<string[]>;
@@ -30,6 +32,8 @@ export function createRetentionActivities(app: INestApplicationContext): Retenti
   const prisma = app.get(PrismaService);
   const audit = app.get(AuditService);
   const events = app.get(EventBusService);
+  const registry = app.get(ConnectorRegistry, { strict: false });
+  const crypto = app.get(CryptoService, { strict: false });
 
   return {
     async findExpiredAssets(input) {
@@ -55,15 +59,65 @@ export function createRetentionActivities(app: INestApplicationContext): Retenti
     },
 
     async executeDisposal(input) {
-      // Flag asset — actual content deletion is delegated to the
-      // connector-specific delete path when implemented.
+      // Attempt connector-native disposal FIRST. If the connector
+      // supports it (and has opted in via enableNativeDisposal), we
+      // record the native operation alongside the catalog flag. If the
+      // connector cannot perform the action we fall back to the
+      // metadata-only flag — preserving the prior behavior exactly.
+      let nativeOutcome: Record<string, unknown> | null = null;
+      try {
+        const asset = await prisma.dataAsset.findUnique({
+          where: { id: input.assetId },
+          select: { externalId: true, dataSourceId: true, tenantId: true } as any,
+        });
+        if (asset && (asset as any).dataSourceId && registry) {
+          const dataSource = await prisma.dataSource.findFirst({
+            where: { id: (asset as any).dataSourceId, tenantId: input.tenantId },
+          });
+          if (dataSource && crypto) {
+            const connector = registry.create(dataSource.type as any);
+            if (connector && typeof (connector as any).disposeAsset === 'function') {
+              const decryptedConfig =
+                typeof dataSource.connectionConfig === 'string'
+                  ? await crypto.decryptJson(
+                      dataSource.connectionConfig as string,
+                      `tenant:${input.tenantId}`,
+                    )
+                  : (dataSource.connectionConfig as any);
+              await connector.initialize({
+                type: dataSource.type as any,
+                credentials: decryptedConfig,
+                options: (dataSource as any).connectionOptions ?? {},
+              });
+              const result = await (connector as any).disposeAsset(
+                (asset as any).externalId,
+                input.action,
+              );
+              nativeOutcome = result as Record<string, unknown>;
+              try { await connector.disconnect(); } catch { /* best-effort */ }
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          `Native disposal attempt failed for ${input.assetId}: ${(err as Error).message}`,
+        );
+      }
+
+      // Always apply catalog metadata flag, regardless of native outcome.
       const updateData: Record<string, unknown> = {};
       if (input.action === 'delete') {
         updateData.deletedAt = new Date();
       } else if (input.action === 'anonymize') {
-        updateData.metadata = { anonymizedAt: new Date().toISOString() };
+        updateData.metadata = {
+          anonymizedAt: new Date().toISOString(),
+          nativeDisposal: nativeOutcome,
+        };
       } else if (input.action === 'archive') {
-        updateData.metadata = { archivedAt: new Date().toISOString() };
+        updateData.metadata = {
+          archivedAt: new Date().toISOString(),
+          nativeDisposal: nativeOutcome,
+        };
       }
       try {
         await prisma.dataAsset.update({
@@ -71,7 +125,20 @@ export function createRetentionActivities(app: INestApplicationContext): Retenti
           data: updateData as any,
         });
       } catch (err) {
-        logger.warn(`executeDisposal failed for ${input.assetId}: ${(err as Error).message}`);
+        logger.warn(`executeDisposal persist failed for ${input.assetId}: ${(err as Error).message}`);
+      }
+
+      if (nativeOutcome) {
+        await audit.log({
+          tenantId: input.tenantId,
+          actorType: 'system',
+          action: 'retention.disposal.native',
+          entityType: 'data_asset',
+          entityId: input.assetId,
+          changes: { after: nativeOutcome },
+          severity: 'warning',
+          category: 'compliance',
+        });
       }
     },
 

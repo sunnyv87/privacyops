@@ -62,6 +62,11 @@ export class PrometheusService implements OnModuleInit {
   // ── SLO ───────────────────────────────────────────────────────────────────
   readonly sloRequestBudget: Gauge;
 
+  // ── AI / LLM ──────────────────────────────────────────────────────────────
+  readonly aiCallTotal: Counter;
+  readonly aiCallDuration: Histogram;
+  readonly aiCircuitState: Gauge;
+
   constructor() {
     this.registry = register;
 
@@ -218,6 +223,24 @@ export class PrometheusService implements OnModuleInit {
       name: 'slo_error_budget_remaining',
       help: 'Remaining error budget as fraction (1.0 = 100%)',
       labelNames: ['slo_name'],
+    });
+
+    // --- AI / LLM ---
+    this.aiCallTotal = new Counter({
+      name: 'ai_call_total',
+      help: 'Total AI provider calls',
+      labelNames: ['tenant_id', 'provider', 'method', 'status'],
+    });
+    this.aiCallDuration = new Histogram({
+      name: 'ai_call_duration_seconds',
+      help: 'AI provider call latency in seconds',
+      labelNames: ['tenant_id', 'provider', 'method'],
+      buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+    });
+    this.aiCircuitState = new Gauge({
+      name: 'ai_circuit_state',
+      help: 'AI circuit-breaker state (1=open, 0=closed)',
+      labelNames: ['provider'],
     });
   }
 

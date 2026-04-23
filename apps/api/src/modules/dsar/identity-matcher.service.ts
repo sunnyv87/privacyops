@@ -57,11 +57,21 @@ export class IdentityMatcherService {
     const minScore = options.minScore ?? IdentityMatcherService.MIN_SCORE_TO_RETURN;
 
     try {
-      // Pull a bounded set of subjects. For tenants with huge subject
-      // tables this is scan-bounded; callers should supply an email
-      // domain hint to narrow the set further in future iterations.
+      // Narrow by email domain when the query carries an email — this
+      // drops the candidate scan from the full active subject table to
+      // just subjects on the same email domain. Non-email queries fall
+      // through to the broad scan unchanged.
+      const domain = this.extractEmailDomain(query.email);
+      const where: Record<string, unknown> = { tenantId, status: 'active' };
+      if (domain) {
+        // Prisma JSON path filter: identityAttributes.email contains '@<domain>'
+        (where as any).identityAttributes = {
+          path: ['email'],
+          string_contains: `@${domain}`,
+        };
+      }
       const subjects = await this.prisma.dataSubject.findMany({
-        where: { tenantId, status: 'active' },
+        where: where as any,
         take: IdentityMatcherService.MAX_CANDIDATES_SCANNED,
         select: { id: true, identityAttributes: true, emailHash: true },
       });
@@ -159,6 +169,20 @@ export class IdentityMatcherService {
   // ---------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------
+
+  /**
+   * Extract the lowercased domain portion of an email, or null if the
+   * input is empty, malformed, or doesn't contain a single '@'.
+   */
+  private extractEmailDomain(email?: string): string | null {
+    if (!email) return null;
+    const parts = email.trim().toLowerCase().split('@');
+    if (parts.length !== 2 || !parts[1]) return null;
+    const domain = parts[1];
+    // Very loose validation — require a dot + at least one TLD char.
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return null;
+    return domain;
+  }
 
   private normalizePhone(p?: string): string {
     if (!p) return '';

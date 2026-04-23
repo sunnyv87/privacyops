@@ -6,8 +6,10 @@ import {
   Body,
   Param,
   Query,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { DsarService } from './dsar.service';
 import { IdentityMatcherService, IdentityMatchQuery } from './identity-matcher.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
@@ -161,6 +163,27 @@ export class DsarController {
   ) {
     const result = await this.dsarService.generateResponsePackage(tenantId, id);
     return { data: result };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Download Response Package (redacted JSON artifact)
+  // ---------------------------------------------------------------------------
+
+  @Get('requests/:id/download')
+  @RequirePermissions('dsar:requests:read')
+  @ApiOperation({ summary: 'Download the redacted DSAR response package' })
+  async downloadResponse(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const artifact = await this.dsarService.getDownload(tenantId, id);
+    res.setHeader('Content-Type', artifact.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${artifact.filename}"`,
+    );
+    res.send(JSON.stringify(artifact.body, null, 2));
   }
 
   // ---------------------------------------------------------------------------

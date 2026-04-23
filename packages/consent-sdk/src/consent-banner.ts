@@ -123,16 +123,47 @@ export class ConsentBanner {
 
   private async submit(notice: ConsentNotice, purposeCodes: string[]): Promise<void> {
     try {
+      // Backend ConsentRecord is per-subject + per-notice, not per-purpose.
+      // The banner derives a single `status`: if any non-required purpose
+      // is opted-in, consent is 'granted'; if only required purposes are
+      // selected (i.e. user rejected non-essential), consent is 'denied'.
+      const requiredCodes = new Set(
+        (notice.purposes ?? []).filter((p) => p.required).map((p) => p.code),
+      );
+      const nonRequiredSelected = purposeCodes.some((c) => !requiredCodes.has(c));
+      const status: 'granted' | 'denied' = nonRequiredSelected ? 'granted' : 'denied';
+
+      // Identify the subject via a browser-persistent anonymous id. A real
+      // deployment should replace this with a known user identifier when
+      // one is available (post-login, server-rendered).
+      const dataSubjectIdentifier = this.getOrCreateAnonId();
+
       const record = await this.client.grant({
         noticeId: notice.id,
-        purposeCodes,
+        dataSubjectIdentifier,
+        status,
         channel: 'web',
-        locale: this.config.language ?? (typeof navigator !== 'undefined' ? navigator.language : undefined),
       });
       this.config.onSubmit?.(record);
       this.unmount();
     } catch (err) {
       this.config.onError?.(err as Error);
+    }
+  }
+
+  private getOrCreateAnonId(): string {
+    const key = 'privacyops.anonSubjectId';
+    try {
+      const existing = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+      if (existing) return existing;
+      const gen =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `anon-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+      if (typeof localStorage !== 'undefined') localStorage.setItem(key, gen);
+      return gen;
+    } catch {
+      return `anon-${Date.now()}`;
     }
   }
 

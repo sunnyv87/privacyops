@@ -2,15 +2,23 @@ import type {
   ConsentGrantInput,
   ConsentNotice,
   ConsentRecord,
+  ConsentRevokeInput,
   ConsentSdkConfig,
 } from './types';
 
 /**
- * ConsentClient — tiny fetch-based client for the PrivacyOps consent APIs.
- * Backend endpoints are untouched; this class just calls existing routes:
+ * ConsentClient — fetch-based wrapper for the PrivacyOps consent APIs.
+ *
+ * Backend routes (aligned with apps/api/src/modules/consent/consent.controller.ts):
  *   GET  /api/v1/consent/notices/:id
- *   POST /api/v1/consent/records
- *   POST /api/v1/consent/records/:id/revoke
+ *   POST /api/v1/consent/records           body: RecordConsentDto
+ *   POST /api/v1/consent/revoke            body: RevokeConsentDto
+ *
+ * Auth: consent write endpoints require an authenticated session. Supply
+ * either `bearerToken` (JWT) or `apiKey` (server-to-server). The SDK does
+ * NOT attempt to call write endpoints anonymously — if neither credential
+ * is provided the request will 401. A future public cookie-ingest endpoint
+ * may relax this.
  */
 export class ConsentClient {
   constructor(private readonly config: ConsentSdkConfig) {
@@ -18,18 +26,31 @@ export class ConsentClient {
     if (!config.tenantId) throw new Error('tenantId is required');
   }
 
-  private buildHeaders(): Record<string, string> {
+  private buildHeaders(requireAuth = false): Record<string, string> {
     const h: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-Tenant-Id': this.config.tenantId,
     };
-    if (this.config.apiKey) h['X-API-Key'] = this.config.apiKey;
+    if (this.config.bearerToken) {
+      h['Authorization'] = `Bearer ${this.config.bearerToken}`;
+    }
+    if (this.config.apiKey) {
+      h['X-API-Key'] = this.config.apiKey;
+    }
+    if (requireAuth && !this.config.bearerToken && !this.config.apiKey) {
+      throw new Error(
+        'ConsentClient: bearerToken or apiKey is required for write operations',
+      );
+    }
     return h;
+  }
+
+  private baseUrl(): string {
+    return this.config.apiBaseUrl.replace(/\/$/, '');
   }
 
   async getNotice(noticeId: string = this.config.noticeId): Promise<ConsentNotice> {
     const res = await fetch(
-      `${this.config.apiBaseUrl.replace(/\/$/, '')}/api/v1/consent/notices/${encodeURIComponent(noticeId)}`,
+      `${this.baseUrl()}/api/v1/consent/notices/${encodeURIComponent(noticeId)}`,
       { method: 'GET', headers: this.buildHeaders(), credentials: 'omit' },
     );
     if (!res.ok) throw new Error(`getNotice failed: ${res.status}`);
@@ -39,13 +60,16 @@ export class ConsentClient {
 
   async grant(input: ConsentGrantInput): Promise<ConsentRecord> {
     const res = await fetch(
-      `${this.config.apiBaseUrl.replace(/\/$/, '')}/api/v1/consent/records`,
+      `${this.baseUrl()}/api/v1/consent/records`,
       {
         method: 'POST',
-        headers: this.buildHeaders(),
+        headers: this.buildHeaders(true),
         body: JSON.stringify({
-          ...input,
+          dataSubjectIdentifier: input.dataSubjectIdentifier,
+          noticeId: input.noticeId,
+          status: input.status,
           channel: input.channel ?? 'web',
+          ...(input.ipAddress ? { ipAddress: input.ipAddress } : {}),
         }),
         credentials: 'omit',
       },
@@ -55,13 +79,17 @@ export class ConsentClient {
     return (body?.data ?? body) as ConsentRecord;
   }
 
-  async revoke(recordId: string, reason?: string): Promise<ConsentRecord> {
+  async revoke(input: ConsentRevokeInput): Promise<ConsentRecord> {
     const res = await fetch(
-      `${this.config.apiBaseUrl.replace(/\/$/, '')}/api/v1/consent/records/${encodeURIComponent(recordId)}/revoke`,
+      `${this.baseUrl()}/api/v1/consent/revoke`,
       {
         method: 'POST',
-        headers: this.buildHeaders(),
-        body: JSON.stringify({ reason: reason ?? 'user_action' }),
+        headers: this.buildHeaders(true),
+        body: JSON.stringify({
+          dataSubjectIdentifier: input.dataSubjectIdentifier,
+          noticeId: input.noticeId,
+          ...(input.reason ? { reason: input.reason } : {}),
+        }),
         credentials: 'omit',
       },
     );

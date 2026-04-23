@@ -57,6 +57,8 @@ export class DsarService {
     tenantId: string,
     email: string,
     name?: string,
+    phone?: string,
+    externalId?: string,
   ) {
     const emailHash = createHash('sha256')
       .update(email.toLowerCase().trim())
@@ -66,7 +68,26 @@ export class DsarService {
       where: { tenantId, emailHash },
     });
 
+    // Build the attribute patch — only include supplied fields so we never
+    // overwrite existing values with undefined.
+    const attrPatch: Record<string, unknown> = { email };
+    if (name) attrPatch.name = name;
+    if (phone) attrPatch.phone = phone;
+    if (externalId) attrPatch.externalId = externalId;
+
     if (existing) {
+      // Merge new attributes into the existing record so phone / externalId
+      // captured on later requests are preserved for fuzzy matching.
+      const merged = { ...(existing.identityAttributes as Record<string, unknown> || {}), ...attrPatch };
+      const hasNewFields = Object.keys(attrPatch).some(
+        (k) => (existing.identityAttributes as any)?.[k] !== attrPatch[k],
+      );
+      if (hasNewFields) {
+        return this.prisma.dataSubject.update({
+          where: { id: existing.id },
+          data: { identityAttributes: merged },
+        });
+      }
       return existing;
     }
 
@@ -74,7 +95,7 @@ export class DsarService {
       data: {
         tenantId,
         emailHash,
-        identityAttributes: { email, ...(name && { name }) },
+        identityAttributes: attrPatch,
         status: 'active',
       },
     });
@@ -91,6 +112,8 @@ export class DsarService {
       tenantId,
       dto.dataSubjectEmail,
       dto.dataSubjectName,
+      (dto as any).dataSubjectPhone,
+      (dto as any).externalSubjectId,
     );
 
     // Due date: 30 days from submission
@@ -565,6 +588,46 @@ export class DsarService {
     });
 
     return responseMetadata;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Download Response Package
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns the redacted response metadata as the downloadable artifact.
+   * The caller (controller) serializes this as a JSON file attachment.
+   * If the package has not yet been generated, triggers generation first
+   * so the response is always deterministic.
+   */
+  async getDownload(tenantId: string, requestId: string) {
+    const request = await this.prisma.dsarRequest.findFirst({
+      where: { id: requestId, tenantId },
+    });
+    if (!request) {
+      throw new NotFoundException(`DSAR request ${requestId} not found`);
+    }
+    let meta = request.responseMetadata as any;
+    if (!meta || meta.status !== 'generated') {
+      meta = await this.generateResponsePackage(tenantId, requestId);
+    }
+    await this.audit.log({
+      tenantId,
+      actorType: 'system',
+      action: 'dsar.response_downloaded',
+      entityType: 'dsar_request',
+      entityId: requestId,
+    });
+    return {
+      filename: `dsar-${request.referenceNumber}.json`,
+      contentType: 'application/json',
+      body: {
+        referenceNumber: request.referenceNumber,
+        generatedAt: meta.generatedAt,
+        redaction: meta.redaction ?? null,
+        discoveredSources: meta.discoveredSources ?? [],
+      },
+    };
   }
 
   // ---------------------------------------------------------------------------

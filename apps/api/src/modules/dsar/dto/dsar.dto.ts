@@ -15,6 +15,16 @@ export class CreateDsarDto {
   @IsString()
   dataSubjectName?: string;
 
+  @ApiPropertyOptional({ description: 'Data subject phone number (optional, for fuzzy identity match)' })
+  @IsOptional()
+  @IsString()
+  dataSubjectPhone?: string;
+
+  @ApiPropertyOptional({ description: 'External subject identifier from the requesting system (optional)' })
+  @IsOptional()
+  @IsString()
+  externalSubjectId?: string;
+
   @ApiProperty({ description: 'Description of the request' })
   @IsString()
   description: string;

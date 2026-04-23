@@ -8,16 +8,22 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CoPilotService } from './co-pilot.service';
+import { NarrativeService } from './narrative.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import { RequireFeature } from '@/core/licensing/decorators/require-feature.decorator';
+
+type ExplainKind = 'risk_finding' | 'remediation_plan' | 'attack_path';
 
 @ApiTags('AI Co-Pilot')
 @ApiBearerAuth()
 @RequireFeature('ai_copilot')
 @Controller('co-pilot')
 export class CoPilotController {
-  constructor(private readonly coPilotService: CoPilotService) {}
+  constructor(
+    private readonly coPilotService: CoPilotService,
+    private readonly narrative: NarrativeService,
+  ) {}
 
   @Post('query')
   @RequirePermissions('copilot:query')
@@ -76,5 +82,36 @@ export class CoPilotController {
   @ApiOperation({ summary: 'Get suggested queries for the co-pilot' })
   async getSuggestions(@CurrentUser('tenantId') tenantId: string) {
     return this.coPilotService.getSuggestions(tenantId);
+  }
+
+  @Post('explain')
+  @RequirePermissions('copilot:query')
+  @ApiOperation({
+    summary:
+      'Explain a risk finding, remediation plan, or attack path in human-readable form',
+  })
+  async explain(
+    @CurrentUser('tenantId') _tenantId: string,
+    @Body()
+    body: {
+      kind: ExplainKind;
+      record: Record<string, unknown>;
+    },
+  ) {
+    let narrative: string;
+    switch (body.kind) {
+      case 'risk_finding':
+        narrative = await this.narrative.explainRisk(body.record as any);
+        break;
+      case 'remediation_plan':
+        narrative = await this.narrative.explainRemediation(body.record as any);
+        break;
+      case 'attack_path':
+        narrative = await this.narrative.explainAttackPath(body.record as any);
+        break;
+      default:
+        narrative = 'Unsupported record kind.';
+    }
+    return { data: { kind: body.kind, narrative } };
   }
 }

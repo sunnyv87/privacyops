@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException, Logger, Optional } from '@nestjs
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
+import { LicensingService } from '@/core/licensing/licensing.service';
 import { QueryInterpreterService } from './query-interpreter.service';
 import { ContextAssemblerService } from './context-assembler.service';
 import { AIProvider, AI_PROVIDER } from './ai-providers/ai-provider.interface';
@@ -16,6 +17,7 @@ export class CoPilotService {
     private readonly events: EventBusService,
     private readonly interpreter: QueryInterpreterService,
     private readonly assembler: ContextAssemblerService,
+    @Optional() private readonly licensing?: LicensingService,
     @Optional() @Inject(AI_PROVIDER) private readonly ai?: AIProvider,
   ) {}
 
@@ -43,6 +45,7 @@ export class CoPilotService {
 
     // Optional LLM enrichment — falls back to template on any failure.
     const response = await this.enrichResponse(
+      tenantId,
       interpretation.intent,
       query,
       templateResponse,
@@ -208,16 +211,43 @@ export class CoPilotService {
 
   /**
    * Optional LLM-backed enrichment. Never changes semantics: if the AI
-   * provider is unavailable OR returns null OR throws, the original
-   * deterministic `templateResponse` is returned unchanged.
+   * provider is unavailable OR the tenant has not opted in OR the
+   * provider returns null OR throws, the original deterministic
+   * `templateResponse` is returned unchanged.
+   *
+   * Per-tenant gate: tenants must have the `ai_llm_enrichment` feature
+   * enabled in their entitlements to send context to an external LLM.
+   * This is additive to the `ai_copilot` feature that gates the whole
+   * Co-Pilot endpoint.
    */
   private async enrichResponse(
+    tenantId: string,
     intent: string,
     query: string,
     templateResponse: string,
     context: Record<string, unknown>,
   ): Promise<string> {
     if (!this.ai || !this.ai.isAvailable()) return templateResponse;
+
+    // Check per-tenant AI-data-egress flag.
+    if (this.licensing) {
+      try {
+        const allowed = await this.licensing.hasAnyFeature(tenantId, ['ai_llm_enrichment']);
+        if (!allowed) {
+          this.logger.debug(
+            `Tenant ${tenantId} has ai_llm_enrichment disabled; serving template response`,
+          );
+          return templateResponse;
+        }
+      } catch (err) {
+        // Fail closed on licensing errors — do not send data externally.
+        this.logger.warn(
+          `Licensing check failed for ${tenantId}; serving template response: ${(err as Error).message}`,
+        );
+        return templateResponse;
+      }
+    }
+
     try {
       const enriched = await this.ai.summarize({
         intent,

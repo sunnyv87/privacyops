@@ -18,20 +18,33 @@ export interface ConsentNotice {
   version: number;
 }
 
+/**
+ * Aligned with backend RecordConsentDto:
+ *   dataSubjectIdentifier (required), noticeId (required),
+ *   status ('granted' | 'denied'), channel (optional), ipAddress (optional)
+ */
 export interface ConsentGrantInput {
   noticeId: string;
-  subjectEmail?: string;
-  externalSubjectId?: string;
-  purposeCodes: string[];
-  channel?: 'web' | 'mobile' | 'api';
-  locale?: string;
+  dataSubjectIdentifier: string;
+  status: 'granted' | 'denied';
+  channel?: string;
+  ipAddress?: string;
+}
+
+/**
+ * Aligned with backend RevokeConsentDto:
+ *   dataSubjectIdentifier, noticeId, reason (optional)
+ */
+export interface ConsentRevokeInput {
+  noticeId: string;
+  dataSubjectIdentifier: string;
+  reason?: string;
 }
 
 export interface ConsentRecord {
   id: string;
   noticeId: string;
-  status: 'granted' | 'revoked';
-  purposeCodes: string[];
+  status: 'granted' | 'denied' | 'revoked';
   grantedAt?: string;
   revokedAt?: string;
 }
@@ -39,11 +52,14 @@ export interface ConsentRecord {
 export interface ConsentSdkConfig {
   /** Base URL of the PrivacyOps API, e.g. https://api.example.com */
   apiBaseUrl: string;
-  /** Tenant identifier (UUID) */
+  /** Tenant identifier (UUID). Used only for Swagger hints — actual tenant
+   *  scope is derived server-side from the auth token. */
   tenantId: string;
-  /** Notice id or code to fetch and render */
+  /** Notice id to fetch and render */
   noticeId: string;
-  /** Optional API key for server-to-server use (NOT exposed in browser) */
+  /** Bearer token for the PrivacyOps API (required for consent write ops). */
+  bearerToken?: string;
+  /** Optional API key for server-to-server use (mutually exclusive with bearerToken) */
   apiKey?: string;
   /** Optional CSS class root for the banner */
   className?: string;

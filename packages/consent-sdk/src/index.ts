@@ -5,5 +5,6 @@ export type {
   ConsentPurpose,
   ConsentRecord,
   ConsentGrantInput,
+  ConsentRevokeInput,
   ConsentSdkConfig,
 } from './types';

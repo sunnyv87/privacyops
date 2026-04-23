@@ -8,6 +8,7 @@ import { NarrativeService } from './narrative.service';
 import { AI_PROVIDER } from './ai-providers/ai-provider.interface';
 import { NullAIProvider } from './ai-providers/null.provider';
 import { ClaudeAIProvider } from './ai-providers/claude.provider';
+import { RedactionEngineModule } from '../redaction-engine/redaction-engine.module';
 
 /**
  * AI provider factory:
@@ -24,6 +25,7 @@ const aiProviderFactory = {
 };
 
 @Module({
+  imports: [RedactionEngineModule],
   controllers: [CoPilotController],
   providers: [
     CoPilotService,

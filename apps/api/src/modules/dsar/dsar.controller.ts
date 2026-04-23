@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DsarService } from './dsar.service';
+import { IdentityMatcherService, IdentityMatchQuery } from './identity-matcher.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import {
@@ -20,7 +21,10 @@ import {
 @ApiBearerAuth()
 @Controller('dsar')
 export class DsarController {
-  constructor(private readonly dsarService: DsarService) {}
+  constructor(
+    private readonly dsarService: DsarService,
+    private readonly identityMatcher: IdentityMatcherService,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // Requests
@@ -185,5 +189,28 @@ export class DsarController {
   async getStats(@CurrentUser('tenantId') tenantId: string) {
     const stats = await this.dsarService.getStats(tenantId);
     return { data: stats };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fuzzy Identity Match (additive)
+  // ---------------------------------------------------------------------------
+
+  @Post('identity-match')
+  @RequirePermissions('dsar:requests:read')
+  @ApiOperation({
+    summary:
+      'Fuzzy-match a prospective data subject against the tenant\'s existing data subjects',
+  })
+  async identityMatch(
+    @CurrentUser('tenantId') tenantId: string,
+    @Body() body: IdentityMatchQuery & { topK?: number; minScore?: number },
+  ) {
+    const { topK, minScore, ...query } = body;
+    const candidates = await this.identityMatcher.findMatchingDataSubjects(
+      tenantId,
+      query,
+      { topK, minScore },
+    );
+    return { data: { candidates, count: candidates.length } };
   }
 }

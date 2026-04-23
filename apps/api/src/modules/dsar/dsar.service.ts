@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
@@ -8,13 +8,17 @@ import {
   UpdateDsarStatusDto,
   DsarFilterDto,
 } from './dto/dsar.dto';
+import { RedactionService } from '../redaction-engine/redaction.service';
 
 @Injectable()
 export class DsarService {
+  private readonly logger = new Logger(DsarService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly events: EventBusService,
+    @Optional() private readonly redaction?: RedactionService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -490,18 +494,47 @@ export class DsarService {
   async generateResponsePackage(tenantId: string, requestId: string) {
     const request = await this.prisma.dsarRequest.findFirst({
       where: { id: requestId, tenantId },
+      include: { dataSubject: true },
     });
 
     if (!request) {
       throw new NotFoundException(`DSAR request ${requestId} not found`);
     }
 
+    // Optional redaction step: collect → redact → generate.
+    // If RedactionService is not provided (legacy DI), this is a no-op
+    // and the previous behavior is preserved exactly.
+    let redactionSummary: Record<string, unknown> | null = null;
+    let discoveredForPackage = request.discoveredDataSources || [];
+    if (this.redaction) {
+      try {
+        const requestorEmail = (request.requestorInfo as any)?.email;
+        const preserve = requestorEmail ? [String(requestorEmail)] : [];
+        const { data, totalMatches } = this.redaction.redactJson(
+          discoveredForPackage,
+          { preserve },
+        );
+        discoveredForPackage = data as any[];
+        redactionSummary = {
+          applied: true,
+          totalMatches,
+          preservedIdentifiers: preserve.length,
+        };
+      } catch (err) {
+        this.logger.warn(
+          `Redaction failed for DSAR ${requestId}; continuing with unredacted package: ${(err as Error).message}`,
+        );
+        redactionSummary = { applied: false, error: 'redaction_failed' };
+      }
+    }
+
     const responseMetadata = {
       generatedAt: new Date().toISOString(),
       format: 'json',
       packageUrl: `/api/dsar/requests/${requestId}/download`,
-      discoveredSources: request.discoveredDataSources || [],
+      discoveredSources: discoveredForPackage,
       status: 'generated',
+      ...(redactionSummary ? { redaction: redactionSummary } : {}),
     };
 
     await this.prisma.dsarRequest.update({

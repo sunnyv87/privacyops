@@ -73,6 +73,9 @@ import { SecurityValidationModule } from './modules/security-validation/security
 import { ObservabilityModule } from './modules/observability/observability.module';
 import { PlatformOptimizationModule } from './modules/platform-optimization/platform-optimization.module';
 
+// Competitive gap-fix modules
+import { RedactionEngineModule } from './modules/redaction-engine/redaction-engine.module';
+
 @Module({
   imports: [
     // Configuration
@@ -136,6 +139,9 @@ import { PlatformOptimizationModule } from './modules/platform-optimization/plat
     SecurityValidationModule,
     ObservabilityModule,
     PlatformOptimizationModule,
+
+    // Competitive gap-fix modules
+    RedactionEngineModule,
   ],
   providers: [
     // Global guards (applied in order: CSRF -> JWT -> Tenant -> Permissions

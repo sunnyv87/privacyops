@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { QueryInterpreterService } from './query-interpreter.service';
 import { ContextAssemblerService } from './context-assembler.service';
+import { AIProvider, AI_PROVIDER } from './ai-providers/ai-provider.interface';
 
 @Injectable()
 export class CoPilotService {
@@ -15,6 +16,7 @@ export class CoPilotService {
     private readonly events: EventBusService,
     private readonly interpreter: QueryInterpreterService,
     private readonly assembler: ContextAssemblerService,
+    @Optional() @Inject(AI_PROVIDER) private readonly ai?: AIProvider,
   ) {}
 
   async processQuery(
@@ -36,8 +38,16 @@ export class CoPilotService {
       interpretation.filters,
     );
 
-    // Generate response summary based on context
-    const response = this.generateResponse(interpretation.intent, context);
+    // Generate response summary based on context (deterministic template).
+    const templateResponse = this.generateResponse(interpretation.intent, context);
+
+    // Optional LLM enrichment — falls back to template on any failure.
+    const response = await this.enrichResponse(
+      interpretation.intent,
+      query,
+      templateResponse,
+      context,
+    );
 
     const latencyMs = Date.now() - startTime;
 
@@ -194,5 +204,35 @@ export class CoPilotService {
       default:
         return 'Query processed. Please refine your question for more specific results.';
     }
+  }
+
+  /**
+   * Optional LLM-backed enrichment. Never changes semantics: if the AI
+   * provider is unavailable OR returns null OR throws, the original
+   * deterministic `templateResponse` is returned unchanged.
+   */
+  private async enrichResponse(
+    intent: string,
+    query: string,
+    templateResponse: string,
+    context: Record<string, unknown>,
+  ): Promise<string> {
+    if (!this.ai || !this.ai.isAvailable()) return templateResponse;
+    try {
+      const enriched = await this.ai.summarize({
+        intent,
+        query,
+        templateResponse,
+        context,
+      });
+      if (typeof enriched === 'string' && enriched.trim().length > 0) {
+        return enriched;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `AI enrichment failed; serving template response: ${(err as Error).message}`,
+      );
+    }
+    return templateResponse;
   }
 }

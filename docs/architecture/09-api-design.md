@@ -10,7 +10,8 @@ https://api.privacyops.techd.com/api/v1
 ### Authentication
 - Bearer token (JWT) for user sessions
 - API key for machine-to-machine
-- HMAC signature for webhooks
+- HMAC-SHA256 signature for webhooks
+- HMAC-SHA256 signature for public consent ingest (`X-Consent-Signature` header, per-tenant key derivation)
 
 ### Headers
 ```
@@ -99,9 +100,10 @@ GET /api/v1/findings?severity=critical,high&status=open&category=exposure&create
 | Assets | /api/v1/assets | Asset/data catalog |
 | Classifications | /api/v1/classifications | Classification management |
 | Findings | /api/v1/findings | Risk findings |
-| Consent | /api/v1/consent | Consent management |
-| DSAR | /api/v1/dsar | Data subject requests |
-| Assessments | /api/v1/assessments | DPIA/PIA |
+| Consent | /api/v1/consent | Consent management (authenticated) |
+| Consent Public | /api/v1/consent/public | Public consent ingest (HMAC-SHA256 auth) |
+| DSAR | /api/v1/dsar | Data subject requests (includes /download and /identity-match) |
+| Assessments | /api/v1/assessments | DPIA/PIA (includes Temporal signal endpoints) |
 | Incidents | /api/v1/incidents | Breach/incident management |
 | Retention | /api/v1/retention | Retention policies |
 | Vendors | /api/v1/vendors | Vendor management |
@@ -109,7 +111,7 @@ GET /api/v1/findings?severity=critical,high&status=open&category=exposure&create
 | Controls | /api/v1/controls | Control library |
 | RoPA | /api/v1/ropa | Processing activities |
 | Evidence | /api/v1/evidence | Evidence artifacts |
-| AI | /api/v1/ai | AI recommendations |
+| Co-Pilot | /api/v1/co-pilot | AI query interface, narrative explanations |
 | Dashboard | /api/v1/dashboard | Dashboard data |
 | Audit | /api/v1/audit | Audit logs |
 

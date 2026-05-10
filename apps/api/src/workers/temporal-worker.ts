@@ -143,6 +143,21 @@ async function bootstrap() {
       activities: createVendorActivities(app),
       label: 'vendor-queue',
     },
+    {
+      taskQueue: 'remediation-queue',
+      workflowsPath: require.resolve('../core/workflow/workflows/remediation.workflow'),
+      activities: createApprovalActivities(app),
+      label: 'remediation-queue',
+    },
+    {
+      taskQueue: 'data-deletion-queue',
+      workflowsPath: require.resolve('../core/workflow/workflows/data-deletion.workflow'),
+      activities: {
+        ...createRetentionActivities(app),
+        ...createApprovalActivities(app),
+      },
+      label: 'data-deletion-queue',
+    },
   ];
 
   for (const spec of workerSpecs) {

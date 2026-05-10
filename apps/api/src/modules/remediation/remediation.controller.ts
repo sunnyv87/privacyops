@@ -14,6 +14,7 @@ import { NarrativeService } from '@/modules/co-pilot/narrative.service';
 import { RequirePermissions } from '@/core/auth/decorators/permissions.decorator';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import { ProposeActionDto } from './dto/remediation.dto';
+import { CAPABILITY_MATRIX } from './remediation-capabilities';
 
 @ApiTags('Remediation')
 @ApiBearerAuth()
@@ -76,6 +77,21 @@ export class RemediationController {
   ) {
     const action = await this.remediationService.rollbackAction(tenantId, id, userId);
     return { data: action };
+  }
+
+  @Get('capabilities')
+  @RequirePermissions('dspm:remediation:read')
+  @ApiOperation({ summary: 'Get remediation capability matrix per connector type' })
+  async getCapabilities() {
+    return { data: CAPABILITY_MATRIX };
+  }
+
+  @Get('summary')
+  @RequirePermissions('dspm:remediation:read')
+  @ApiOperation({ summary: 'Get remediation action status summary for dashboard' })
+  async getSummary(@CurrentUser('tenantId') tenantId: string) {
+    const summary = await this.remediationService.getRemediationSummary(tenantId);
+    return { data: summary };
   }
 
   @Get()

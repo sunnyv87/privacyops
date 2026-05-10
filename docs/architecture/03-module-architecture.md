@@ -179,7 +179,8 @@
 
 **APIs**:
 - `POST /api/v1/consent/notices` — create notice
-- `POST /api/v1/consent/records` — record consent
+- `POST /api/v1/consent/records` — record consent (authenticated)
+- `POST /api/v1/consent/public/record` — record consent (public, HMAC-SHA256 auth via Consent SDK)
 - `GET /api/v1/consent/records?subject_id=X` — get consent status
 - `POST /api/v1/consent/revoke` — revoke consent
 - `GET /api/v1/consent/validate` — validate consent for purpose
@@ -225,7 +226,9 @@
 **APIs**:
 - `POST /api/v1/dsar/requests` — submit request
 - `GET /api/v1/dsar/requests/:id` — get request detail
+- `GET /api/v1/dsar/requests/:id/download` — download DSAR response package
 - `POST /api/v1/dsar/requests/:id/verify` — verify identity
+- `POST /api/v1/dsar/identity-match` — fuzzy identity matching across data sources
 - `POST /api/v1/dsar/requests/:id/collect` — trigger data collection
 - `POST /api/v1/dsar/requests/:id/respond` — submit response
 - `GET /api/v1/dsar/requests/:id/timeline` — get request timeline
@@ -271,6 +274,7 @@
 - `PUT /api/v1/assessments/:id/risks` — update risk items
 - `POST /api/v1/assessments/:id/submit` — submit for review
 - `POST /api/v1/assessments/:id/approve` — approve
+- `POST /api/v1/assessments/:id/signal-decision` — submit DPIA decision via Temporal signal (decision + comments, 7-day timeout)
 - `GET /api/v1/assessments/dashboard` — risk dashboard data
 
 **Events Produced**: `assessment.created`, `assessment.submitted`, `assessment.approved`, `risk.identified`, `risk.mitigated`

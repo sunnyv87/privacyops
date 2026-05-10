@@ -136,6 +136,17 @@ This starts:
 
 API documentation (Swagger) is available at http://localhost:4000/api/docs.
 
+### Consent SDK (Browser Package)
+
+A browser-side consent capture SDK is available at `packages/consent-sdk/`. It provides `ConsentClient` and `ConsentBanner` for embedding consent collection in web applications:
+
+```bash
+cd packages/consent-sdk
+pnpm build
+```
+
+The SDK communicates with the public consent ingest endpoint (`POST /consent/public/record`) using HMAC-SHA256 authentication. See the Consent Public Ingest environment variables below.
+
 ---
 
 ## Environment Variables Reference
@@ -205,11 +216,23 @@ API documentation (Swagger) is available at http://localhost:4000/api/docs.
 | `KMS_KEY_ARN` | *(optional)* | AWS KMS key ARN for envelope encryption |
 | `ENCRYPTION_MASTER_KEY` | *(optional)* | Local master key (dev only, use KMS in production) |
 
-### AI
+### AI / Co-Pilot
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | *(optional)* | Anthropic API key for AI Co-Pilot features |
+| `ANTHROPIC_API_KEY` | *(optional)* | Anthropic API key for AI Co-Pilot features. Provider is inert without it. |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Model ID used for all AI calls |
+| `ANTHROPIC_MAX_TOKENS` | `512` | Maximum output tokens per AI call |
+| `CLAUDE_TIMEOUT_MS` | `10000` | Per-call timeout in milliseconds (AbortSignal) |
+
+The AI layer operates with fail-closed semantics: missing API key, missing SDK (`@anthropic-ai/sdk`), or circuit breaker open all cause the provider to return `null`, falling back to deterministic templates. Per-tenant access requires the `ai_llm_enrichment` feature flag.
+
+### Consent Public Ingest
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CONSENT_PUBLIC_SHARED_SECRET` | *(required for public consent)* | Shared secret (min 32 chars) for HMAC-SHA256 consent ingest. Per-tenant keys are derived from this. |
+| `CONSENT_PUBLIC_SECRET_<TENANTID>` | *(optional)* | Per-tenant override secret (min 32 chars). Takes precedence over the derived key. |
 
 ### Email Notifications
 

@@ -19,7 +19,7 @@
 ### Non-Functional Requirements
 - Consent validation API: <50ms p99 latency (Redis-cached)
 - Consent ledger: Append-only, tamper-evident
-- SDK bundle size: <10KB gzipped
+- SDK bundle size: <10KB gzipped (Consent SDK at `packages/consent-sdk/` provides `ConsentClient` + `ConsentBanner`)
 - Support 10M+ consent records per tenant
 
 ### APIs
@@ -30,7 +30,8 @@ GET    /api/v1/consent/notices/:id          # Get notice detail
 PUT    /api/v1/consent/notices/:id          # Update notice
 POST   /api/v1/consent/notices/:id/publish  # Publish notice version
 
-POST   /api/v1/consent/records              # Record consent (public API)
+POST   /api/v1/consent/records              # Record consent (authenticated API)
+POST   /api/v1/consent/public/record       # Record consent (public, HMAC-SHA256 via Consent SDK)
 GET    /api/v1/consent/records              # List consent records
 GET    /api/v1/consent/records/:subjectId   # Get subject's consent state
 
@@ -342,6 +343,8 @@ request.submitted → verify_identity → route_to_stewards
 POST   /api/v1/dsar/requests                    # Submit request (public)
 GET    /api/v1/dsar/requests                    # List requests
 GET    /api/v1/dsar/requests/:id                # Get detail
+GET    /api/v1/dsar/requests/:id/download       # Download response package (redacted)
+POST   /api/v1/dsar/identity-match              # Fuzzy identity matching (weighted scoring)
 POST   /api/v1/dsar/requests/:id/verify         # Submit verification
 POST   /api/v1/dsar/requests/:id/assign         # Assign to steward
 POST   /api/v1/dsar/requests/:id/collect        # Submit collected data

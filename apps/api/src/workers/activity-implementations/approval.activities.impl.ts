@@ -247,9 +247,42 @@ export function createApprovalActivities(app: INestApplicationContext): Approval
 
     // ---------- Data deletion ----------
     async checkLegalHolds(input) {
-      // Absent a LegalHold table in the schema, default to eligible.
-      // When a real hold tracker is added, filter asset IDs here.
-      return { eligibleAssetIds: input.assetIds };
+      const activeHolds = await prisma.$queryRawUnsafe<Array<{ asset_id: string }>>(
+        `SELECT DISTINCT asset_id FROM legal_holds
+         WHERE tenant_id = $1
+           AND asset_id = ANY($2::uuid[])
+           AND released_at IS NULL
+           AND (expires_at IS NULL OR expires_at > NOW())`,
+        input.tenantId,
+        input.assetIds,
+      );
+
+      const heldAssetIds = new Set(activeHolds.map(h => h.asset_id));
+      const eligibleAssetIds = input.assetIds.filter((id: string) => !heldAssetIds.has(id));
+
+      if (heldAssetIds.size > 0) {
+        logger.warn(
+          `Legal hold enforcement: ${heldAssetIds.size} of ${input.assetIds.length} assets blocked from deletion`,
+        );
+        await audit.log({
+          tenantId: input.tenantId,
+          actorType: 'system',
+          action: 'legal_hold.deletion_blocked',
+          entityType: 'data_deletion',
+          entityId: input.tenantId,
+          severity: 'warning',
+          category: 'compliance',
+          changes: {
+            after: {
+              totalAssets: input.assetIds.length,
+              heldAssets: Array.from(heldAssetIds),
+              eligibleAssets: eligibleAssetIds.length,
+            },
+          },
+        });
+      }
+
+      return { eligibleAssetIds };
     },
 
     async requestDeletionApproval(input) {
@@ -267,7 +300,7 @@ export function createApprovalActivities(app: INestApplicationContext): Approval
       const deleted: string[] = [];
       for (const assetId of input.assetIds) {
         try {
-          await prisma.dataAsset.update({
+          await prisma.asset.update({
             where: { id: assetId },
             data: { deletedAt: new Date() },
           });

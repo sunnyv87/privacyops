@@ -55,7 +55,7 @@
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │              SHARED SERVICES LAYER                       │    │
-│  │  Audit │ Events │ Notifications │ Search │ AI │ Workflow │    │
+│  │ Audit│Events│Notifications│Search│AI│Workflow│Redaction │    │
 │  └─────────────────────────────────────────────────────────┘    │
 └──────┬──────────┬──────────┬──────────┬──────────┬──────────────┘
        │          │          │          │          │
@@ -126,23 +126,33 @@ Modules interact via:
 - **Validation**: class-validator + class-transformer (DTOs), Zod (shared schemas)
 - **Auth**: Passport.js (JWT + SAML strategies)
 - **API Documentation**: Swagger/OpenAPI via @nestjs/swagger
-- **Background Jobs**: BullMQ (Redis-backed) for simple jobs, Temporal for workflows
+- **Background Jobs**: Temporal for workflows and connector orchestration
 - **File Parsing**: Apache Tika (via Docker sidecar) for document extraction
 - **PDF Generation**: Puppeteer or PDFKit
 
 ### Connector Framework
 - Plugin-based architecture
-- Each connector implements `IConnector` interface
-- Connectors run in isolated worker processes (BullMQ workers)
-- Connectors handle: auth, metadata pull, content sampling, schema extraction
+- Each connector implements `IConnector` interface (including optional `disposeAsset()` for retention disposal)
+- Connectors are orchestrated via Temporal workflows, running in dedicated task queues
+- Connectors handle: auth, metadata pull, content sampling, schema extraction, native disposal
 
 ### Workflow Engine (Temporal)
-- DSAR fulfillment workflows
-- Breach response workflows
-- DPIA review/approval workflows
-- Retention disposition workflows
-- Vendor assessment workflows
-- Scan orchestration workflows
+
+The Temporal worker (`temporal-worker.ts`) runs 6 concurrent task queues via `Promise.all`:
+
+| Task Queue | Purpose |
+|---|---|
+| `scan` | Connector discovery, classification, risk scoring |
+| `dsar` | DSAR fulfillment with identity matching |
+| `breach` | Breach response and notification timelines |
+| `retention` | Retention disposition workflows |
+| `approval` | DPIA review/approval with human-in-the-loop signals |
+| `vendor` | Vendor assessment with response signals |
+
+Temporal signals for human-in-the-loop:
+- `dpiaDecisionSignal` — decision + comments, 7-day timeout
+- `remediationApprovalSignal` — boolean approval, 3-day timeout
+- `vendorResponseSignal` — vendor answers, 30-day timeout
 
 ### Notification Engine
 - Multi-channel: Email, in-app, webhook, Slack (Phase 2)
@@ -162,13 +172,16 @@ Modules interact via:
 - Evaluates: retention policies, classification policies, access policies, consent validation
 - Cacheable policy evaluation with Redis
 
-### AI Orchestration Layer
-- Abstraction over LLM providers (Claude primary)
-- PII redaction before external LLM calls
-- Prompt template management
-- Response caching for identical queries
-- Audit trail for all AI interactions
-- Human-in-the-loop approval for AI-generated content
+### AI Orchestration Layer (Implemented)
+
+The Co-Pilot module provides a fully implemented AI layer:
+- **CoPilotService**: Query interpretation → context assembly → deterministic template → optional LLM enrichment
+- **ClaudeAIProvider**: Anthropic SDK adapter with circuit breaker (5 fail / 60s), pre-send PII redaction, per-call AbortSignal timeout
+- **NarrativeService**: `explainRisk()`, `explainRemediation()`, `explainAttackPath()` with AI + deterministic fallbacks
+- **RedactionService**: 12 PII regex patterns with Luhn validation; fail-closed behavior
+- **IdentityMatcherService**: Fuzzy identity matching with weighted scoring (email 0.50, externalId 0.40, name 0.35, phone 0.25)
+- **Licensing gate**: Per-tenant `ai_llm_enrichment` feature flag; fail-closed on licensing errors
+- **Prometheus metrics**: `ai_call_total`, `ai_call_duration_seconds`, `ai_circuit_state`
 
 ### Reporting Layer
 - Pre-built report templates (PDF, CSV, Excel)

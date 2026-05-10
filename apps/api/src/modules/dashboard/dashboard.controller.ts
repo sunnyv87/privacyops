@@ -62,6 +62,14 @@ export class DashboardController {
     return { data: overview };
   }
 
+  @Get('remediation')
+  @RequirePermissions('dashboard:stats:read')
+  @ApiOperation({ summary: 'Get remediation action summary by status' })
+  async getRemediationSummary(@CurrentUser('tenantId') tenantId: string) {
+    const summary = await this.dashboardService.getRemediationSummary(tenantId);
+    return { data: summary };
+  }
+
   @Get('shadow-data')
   @RequirePermissions('dashboard:risk:read')
   @ApiOperation({ summary: 'Get shadow data dashboard summary' })

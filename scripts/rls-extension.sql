@@ -31,7 +31,8 @@ DECLARE
     'data_graph_nodes', 'data_graph_edges', 'entity_risk_profiles',
     'remediation_actions', 'identity_access_mappings', 'shadow_data_alerts',
     'data_lineage_records', 'attack_paths',
-    -- Compliance / retention / breach
+    -- Compliance / retention / breach / legal holds
+    'legal_holds',
     'dpia_trigger_rules', 'retention_violations', 'disposition_certificates',
     'compliance_frameworks', 'control_gaps', 'breach_detection_rules',
     -- AI governance

@@ -3,7 +3,9 @@ import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { RemediationExecutorService } from './remediation-executor.service';
+import type { ExecutionResult } from './remediation-executor.service';
 import { RemediationFilterDto } from './dto/remediation.dto';
+import { getSuggestedManualAction } from './remediation-capabilities';
 
 @Injectable()
 export class RemediationService {
@@ -130,6 +132,10 @@ export class RemediationService {
     try {
       const result = await this.executor.execute(action);
 
+      if (result.status === 'UNSUPPORTED') {
+        return this.handleUnsupportedAction(tenantId, actionId, userId, action, result);
+      }
+
       const updated = await this.prisma.remediationAction.update({
         where: { id: actionId },
         data: {
@@ -174,6 +180,97 @@ export class RemediationService {
 
       throw error;
     }
+  }
+
+  private async handleUnsupportedAction(
+    tenantId: string,
+    actionId: string,
+    userId: string,
+    action: any,
+    result: ExecutionResult,
+  ) {
+    const suggestedAction = getSuggestedManualAction(
+      result.connectorType ?? '',
+      action.actionType,
+    );
+
+    const enrichedResult = {
+      ...result,
+      suggested_manual_action: suggestedAction ?? result.message,
+      manual_task_created: false as boolean,
+      manual_task_id: null as string | null,
+    };
+
+    // Create a manual WorkflowTask so the action is visible and trackable
+    try {
+      const task = await this.prisma.workflowTask.create({
+        data: {
+          tenantId,
+          workflowId: actionId,
+          taskType: 'execute',
+          title: `Manual remediation: ${action.actionType} for finding ${action.findingId}`,
+          description: suggestedAction ?? result.message,
+          ownerId: userId,
+          assigneeId: userId,
+          priority: 'high',
+          status: 'pending',
+          metadata: {
+            remediationActionId: actionId,
+            actionType: action.actionType,
+            connectorType: result.connectorType,
+            executionStatus: 'UNSUPPORTED',
+          },
+        },
+      });
+      enrichedResult.manual_task_created = true;
+      enrichedResult.manual_task_id = task.id;
+    } catch (err) {
+      this.logger.warn(
+        `Failed to create manual task for unsupported action ${actionId}: ${(err as Error).message}`,
+      );
+    }
+
+    const updated = await this.prisma.remediationAction.update({
+      where: { id: actionId },
+      data: {
+        status: 'unsupported',
+        executionResult: enrichedResult,
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorId: userId,
+      actorType: 'user',
+      action: 'remediation.unsupported',
+      entityType: 'remediation_action',
+      entityId: actionId,
+      severity: 'warning',
+      category: 'security',
+      changes: {
+        after: {
+          status: 'unsupported',
+          actionType: action.actionType,
+          connectorType: result.connectorType,
+          suggested_manual_action: suggestedAction,
+          manual_task_created: enrichedResult.manual_task_created,
+        },
+      },
+    });
+
+    await this.events.publish({
+      type: 'remediation.unsupported',
+      tenantId,
+      data: {
+        actionId,
+        actionType: action.actionType,
+        connectorType: result.connectorType,
+        manualTaskId: enrichedResult.manual_task_id,
+      },
+      timestamp: new Date(),
+    });
+
+    return updated;
   }
 
   async rollbackAction(tenantId: string, actionId: string, userId: string) {
@@ -265,6 +362,31 @@ export class RemediationService {
         totalItems,
         totalPages: Math.ceil(totalItems / pageSize),
       },
+    };
+  }
+
+  async getRemediationSummary(tenantId: string) {
+    const groups = await this.prisma.remediationAction.groupBy({
+      by: ['status'],
+      where: { tenantId },
+      _count: { id: true },
+    });
+
+    const byStatus: Record<string, number> = {};
+    let total = 0;
+    for (const g of groups) {
+      byStatus[g.status] = g._count.id;
+      total += g._count.id;
+    }
+
+    const automated = (byStatus['completed'] ?? 0);
+    const manualRequired = (byStatus['unsupported'] ?? 0) + (byStatus['manual_required'] ?? 0);
+
+    return {
+      total,
+      byStatus,
+      automatedRate: total > 0 ? Math.round((automated / total) * 100) : 0,
+      manualRequired,
     };
   }
 

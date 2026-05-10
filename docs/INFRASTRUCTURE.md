@@ -53,12 +53,12 @@ PrivacyOps is an enterprise-grade Privacy Operations, DSPM, and Data Security In
 | API Server | `node dist/main.js` (NestJS, port 4000) | 2 | 500m | 512 Mi | Stateless, JWT auth, health probes |
 | Web Frontend | Next.js standalone (port 3000) | 2 | 250m | 256 Mi | SSR, internal API routing |
 | Scan Worker | `node dist/workers/scan-worker.js` | 1–20 (HPA) | 500m–2000m | 1–4 Gi | CPU-intensive; subscribes to NATS `scan.queued` |
-| Temporal Worker | `node dist/workers/temporal-worker.js` | 2 | 250m | 512 Mi | Registers discoverAssets, classifyAsset, calculateRiskScore activities |
+| Temporal Worker | `node dist/workers/temporal-worker.js` | 2 | 500m | 1 Gi | Runs 6 concurrent task queues (scan, dsar, breach, retention, approval, vendor) via `Promise.all`; handles workflow signals for human-in-the-loop |
 | Keycloak | Quay image, port 8080 | 2 | 500m | 1 Gi | OIDC/SAML IdP; uses PostgreSQL backend |
 | Temporal Server | `temporalio/auto-setup:1.23` | 2 | 500m | 1 Gi | Requires its own PostgreSQL database |
 | NATS | `nats:2.10-alpine` with JetStream | 3 | 128m | 256 Mi | Lightweight; event bus for the platform |
 
-**Total steady-state pod resource requests (MVP):** ~4.5 vCPU, ~6.5 Gi RAM (excluding scan worker bursts).
+**Total steady-state pod resource requests (MVP):** ~5 vCPU, ~7.5 Gi RAM (excluding scan worker bursts).
 
 ### B. Data Layer
 

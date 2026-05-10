@@ -6,11 +6,12 @@ import { WorkflowGateway } from './workflow.gateway';
 export const TASK_QUEUES = {
   SCAN: 'scan-queue',
   DSAR: 'dsar-queue',
-  CONSENT: 'consent-queue',
   BREACH: 'breach-queue',
   RETENTION: 'retention-queue',
   APPROVAL: 'approval-queue',
   VENDOR: 'vendor-queue',
+  REMEDIATION: 'remediation-queue',
+  DATA_DELETION: 'data-deletion-queue',
 } as const;
 
 @Injectable()
@@ -148,7 +149,7 @@ export class WorkflowService {
     }
 
     const handle = await this.temporal.client.workflow.start('remediationWorkflow', {
-      taskQueue: TASK_QUEUES.APPROVAL,
+      taskQueue: TASK_QUEUES.REMEDIATION,
       workflowId: `remediation-${input.findingId}`,
       args: [input],
     });
@@ -193,7 +194,7 @@ export class WorkflowService {
     }
 
     const handle = await this.temporal.client.workflow.start('dataDeletionWorkflow', {
-      taskQueue: TASK_QUEUES.RETENTION,
+      taskQueue: TASK_QUEUES.DATA_DELETION,
       workflowId: `data-deletion-${input.policyId}-${Date.now()}`,
       args: [input],
     });

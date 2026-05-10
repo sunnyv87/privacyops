@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ProposeActionDto {
@@ -6,13 +6,25 @@ export class ProposeActionDto {
   @IsString()
   findingId: string;
 
-  @ApiProperty({ enum: ['revoke_access', 'encrypt', 'enable_mfa', 'apply_retention', 'restrict_public', 'delete_data', 'mask_data', 'quarantine'] })
+  @ApiProperty({
+    enum: [
+      'revoke_access', 'encrypt', 'enable_mfa', 'apply_retention',
+      'restrict_public', 'delete_data', 'mask_data', 'quarantine',
+      'rotate_credentials', 'restrict_sharing', 'disable_public_access',
+      'enforce_encryption',
+    ],
+  })
   @IsString()
   actionType: string;
 }
 
 export class RemediationFilterDto {
-  @ApiPropertyOptional({ enum: ['proposed', 'approved', 'executing', 'completed', 'failed', 'rolled_back'] })
+  @ApiPropertyOptional({
+    enum: [
+      'proposed', 'approved', 'executing', 'completed',
+      'failed', 'rolled_back', 'unsupported', 'manual_required',
+    ],
+  })
   @IsOptional()
   @IsString()
   status?: string;

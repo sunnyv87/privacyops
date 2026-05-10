@@ -468,16 +468,17 @@ The schema is already well-prepared for most upgrade needs:
 **File:** `apps/api/src/modules/connectors/interfaces/connector.interface.ts`
 
 ### Current State
-The SDK is complete and requires **no changes**. The `IConnector` interface already defines all necessary methods:
+The SDK has been extended with one addition since the initial audit. The `IConnector` interface defines:
 - `initialize()`, `testConnection()`, `disconnect()` — lifecycle
 - `listAssets()` — discovery (AsyncGenerator)
 - `getAssetSchema()` — schema retrieval
 - `sampleContent()` — content sampling (AsyncGenerator)
 - `getAccessPolicies()` — access policy retrieval (optional)
 - `getMetadata()` — connector metadata
+- `disposeAsset?(assetExternalId, action)` — retention disposal (optional, added post-audit)
 
 ### Assessment
-**No SDK changes needed.** The problem is not missing connector methods — it's that the platform never calls them.
+The `IConnector` interface has been extended with an optional `disposeAsset()` method for retention disposal workflows. AWS S3 implements this method for native object deletion. New connectors should implement this method where the data source supports programmatic deletion or anonymization. The core problem remains: the platform never calls `getAssetSchema()`, `sampleContent()`, or `getAccessPolicies()` during scans.
 
 ---
 
@@ -568,7 +569,7 @@ scan.completed
 2. **Existing scan behavior is preserved** — enrichment phases are opt-in via scan config
 3. **Prisma schema has no breaking migrations** — all new values are for string fields, not enums
 4. **Event schema is additive** — new event types don't affect existing subscribers
-5. **Connector SDK is unchanged** — no modifications to `IConnector`, `BaseConnector`, or `BaseRestApiConnector`
+5. **Connector SDK extended minimally** — `IConnector` gained optional `disposeAsset()` method (backward-compatible). `BaseConnector` and `BaseRestApiConnector` unchanged.
 6. **Existing test suites remain valid** — 43 connector tests + registry tests unaffected
 
 ---

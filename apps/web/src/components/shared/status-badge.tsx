@@ -46,6 +46,14 @@ const statusStyles: Record<string, string> = {
   approved: 'bg-green-100 text-green-800',
   archived: 'bg-gray-100 text-gray-500',
 
+  // Remediation
+  proposed: 'bg-blue-100 text-blue-800',
+  pending_approval: 'bg-yellow-100 text-yellow-800',
+  executing: 'bg-indigo-100 text-indigo-800',
+  rolled_back: 'bg-orange-100 text-orange-800',
+  unsupported: 'bg-amber-100 text-amber-800',
+  manual_required: 'bg-purple-100 text-purple-800',
+
   // Findings
   open: 'bg-red-100 text-red-800',
   acknowledged: 'bg-yellow-100 text-yellow-800',

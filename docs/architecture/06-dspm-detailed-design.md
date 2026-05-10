@@ -46,6 +46,9 @@ interface IConnector {
   // Metadata
   getMetadata(): Promise<ConnectorMetadata>;
   getCapabilities(): ConnectorCapabilities;
+
+  // Retention Disposal (optional)
+  disposeAsset?(assetExternalId: string, action: 'delete' | 'anonymize'): Promise<DisposeResult>;
 }
 
 interface ConnectorCapabilities {

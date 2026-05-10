@@ -544,10 +544,37 @@ export class DsarService {
           preservedIdentifiers: preserve.length,
         };
       } catch (err) {
-        this.logger.warn(
-          `Redaction failed for DSAR ${requestId}; continuing with unredacted package: ${(err as Error).message}`,
+        this.logger.error(
+          `CRITICAL: Redaction failed for DSAR ${requestId} — blocking package delivery: ${(err as Error).message}`,
         );
-        redactionSummary = { applied: false, error: 'redaction_failed' };
+
+        const failedMetadata = {
+          generatedAt: new Date().toISOString(),
+          format: 'json',
+          status: 'redaction_failed',
+          redaction: { applied: false, error: 'redaction_failed', errorMessage: (err as Error).message },
+        };
+
+        await this.prisma.dsarRequest.update({
+          where: { id: requestId },
+          data: {
+            responseMetadata: failedMetadata,
+            status: 'review',
+          },
+        });
+
+        await this.audit.log({
+          tenantId,
+          actorType: 'system',
+          action: 'dsar.redaction_failed',
+          entityType: 'dsar_request',
+          entityId: requestId,
+          severity: 'critical',
+          category: 'security',
+          changes: { after: { error: (err as Error).message, status: 'redaction_failed' } },
+        });
+
+        return failedMetadata;
       }
     }
 
@@ -608,8 +635,14 @@ export class DsarService {
       throw new NotFoundException(`DSAR request ${requestId} not found`);
     }
     let meta = request.responseMetadata as any;
-    if (!meta || meta.status !== 'generated') {
+    if (!meta || (meta.status !== 'generated' && meta.status !== 'redaction_failed')) {
       meta = await this.generateResponsePackage(tenantId, requestId);
+    }
+    if (meta.status === 'redaction_failed') {
+      throw new Error(
+        `DSAR ${requestId} requires manual review: redaction failed. ` +
+        `Package cannot be downloaded until redaction succeeds.`,
+      );
     }
     await this.audit.log({
       tenantId,

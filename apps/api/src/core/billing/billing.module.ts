@@ -38,6 +38,15 @@ import { StripeBillingProvider } from './providers/stripe.provider';
         stripeProvider: StripeBillingProvider,
       ) => {
         const name = (config.get<string>('BILLING_PROVIDER') ?? 'null').toLowerCase();
+        if (
+          config.get<string>('NODE_ENV') === 'production' &&
+          name !== 'stripe'
+        ) {
+          throw new Error(
+            'BILLING_PROVIDER must be set to "stripe" in production. ' +
+            'The NullBillingProvider stub is not safe for real customer billing.',
+          );
+        }
         switch (name) {
           case 'stripe':
             return stripeProvider;

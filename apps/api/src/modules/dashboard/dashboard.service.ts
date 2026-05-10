@@ -229,6 +229,31 @@ export class DashboardService {
     });
   }
 
+  async getRemediationSummary(tenantId: string) {
+    const groups = await this.prisma.remediationAction.groupBy({
+      by: ['status'],
+      where: { tenantId },
+      _count: { id: true },
+    });
+
+    const byStatus: Record<string, number> = {};
+    let total = 0;
+    for (const g of groups) {
+      byStatus[g.status] = g._count.id;
+      total += g._count.id;
+    }
+
+    const automated = byStatus['completed'] ?? 0;
+    const manualRequired = (byStatus['unsupported'] ?? 0) + (byStatus['manual_required'] ?? 0);
+
+    return {
+      total,
+      byStatus,
+      automatedRate: total > 0 ? Math.round((automated / total) * 100) : 0,
+      manualRequired,
+    };
+  }
+
   // ========================================================================
   // Module 21: Extended Dashboard Views
   // ========================================================================

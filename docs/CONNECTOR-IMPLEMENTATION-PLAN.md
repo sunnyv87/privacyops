@@ -29,7 +29,7 @@ This plan extends the ecosystem from 9 to 43 connectors across 7 connector famil
 
 | Component | File | Status |
 |-----------|------|--------|
-| Core interface | `connectors/interfaces/connector.interface.ts` | ✅ Stable — extend `DataSourceType` union only |
+| Core interface | `connectors/interfaces/connector.interface.ts` | ⚠️ Extended — `disposeAsset?(assetExternalId, action)` added for retention disposal. Extend `DataSourceType` union for new connectors. |
 | Base connector | `connectors/sdk/base-connector.ts` | ✅ Stable — no modifications needed |
 | Registry | `connectors/connector-registry.ts` | ⚠️ Extend — add `register()` calls for new connectors |
 | Service | `connectors/connectors.service.ts` | ✅ Stable — uses registry dynamically, no changes needed |

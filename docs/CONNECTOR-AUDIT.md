@@ -69,6 +69,7 @@ apps/api/src/modules/connectors/
 | `sampleContent(assetId, options)` | `AsyncGenerator<ContentSample>` | Yes | Sample data for classification |
 | `getAccessPolicies(assetId)` | `Promise<AccessPolicy[]>` | Optional | Collect permission/access information |
 | `getMetadata()` | `ConnectorMetadata` | Yes | Return connector capabilities and requirements |
+| `disposeAsset?(assetExternalId, action)` | `Promise<DisposeResult>` | Optional | Execute retention disposal action (delete/anonymize) on a specific asset |
 
 ### 2.3 Base Connector (`BaseConnector`)
 
@@ -447,11 +448,13 @@ These connectors are commonly expected in enterprise DSPM/privacy platforms:
 | **Event Ingestion** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Incremental Scan** | ✅† | ✅† | ✅† | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Encryption Check** | ✅† | ✅† | ✅† | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Native Disposal** | ✅‡ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 - ✅* Snowflake `listAssets()` includes `owner` in metadata from `SHOW TABLES/VIEWS` output.
 - ✅† Declared in metadata but actual incremental/encryption logic not visible in the implementation — likely deferred.
 - **Owner Mapping:** No connector systematically maps data asset owners. The `AccessPolicy` interface captures `principal` + `principalType` but doesn't resolve to organization-level owner identity.
 - **Event Ingestion:** No connector supports real-time change detection or event streaming from data sources.
+- ✅‡ AWS S3 implements `disposeAsset()` for native object deletion via the retention disposal workflow. Other connectors do not yet implement this optional method.
 
 ---
 

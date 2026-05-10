@@ -1,377 +1,556 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Section, SectionHeader } from "@/components/ui/section";
-import { IconCard } from "@/components/ui/icon-card";
 import { CTASection } from "@/components/shared/cta-section";
-import { AnimatedSection, StaggerContainer, StaggerItem } from "@/components/shared/animated-section";
+import {
+  AnimatedSection,
+  StaggerContainer,
+  StaggerItem,
+} from "@/components/shared/animated-section";
+import { MetricCounter } from "@/components/shared/metric-counter";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   ArrowRight,
-  Shield,
-  Eye,
-  Lightbulb,
-  FlaskConical,
-  Heart,
-  Lock,
-  Scale,
-  Brain,
-  Users,
-  Globe,
   Award,
+  Brain,
   Building2,
-  Target,
-  CheckCircle2,
-  Handshake,
-  BookOpen,
+  FlaskConical,
+  Globe,
+  Heart,
+  KeyRound,
   Layers,
+  Newspaper,
+  Rocket,
+  ShieldCheck,
+  Sparkles,
+  Trophy,
+  Zap,
+  type LucideIcon,
 } from "lucide-react";
 
-/* ------------------------------------------------------------------ */
-/*  HERO                                                               */
-/* ------------------------------------------------------------------ */
-function HeroSection() {
-  return (
-    <section className="relative min-h-[70vh] flex items-center overflow-hidden">
-      <div className="absolute inset-0 radial-hero" />
-      <div className="absolute inset-0 grid-bg" />
+// ---------------------------------------------------------------------------
+// Data
+// ---------------------------------------------------------------------------
 
-      <div className="relative mx-auto max-w-7xl px-6 lg:px-8 pt-32 pb-16 w-full text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
-        >
-          <Badge variant="cyan" className="mb-6">
-            About TechD
-          </Badge>
-
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 max-w-4xl mx-auto">
-            Securing the World&apos;s Data with{" "}
-            <span className="gradient-text">Intelligent Automation</span>
-          </h1>
-
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-8">
-            TechD is an AI-native cybersecurity company building the future of
-            enterprise data protection and privacy operations.
-          </p>
-        </motion.div>
-      </div>
-    </section>
-  );
+interface Milestone {
+  year: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  border: string;
+  bg: string;
+  text: string;
 }
 
-/* ------------------------------------------------------------------ */
-/*  COMPANY VISION                                                     */
-/* ------------------------------------------------------------------ */
-function VisionSection() {
-  return (
-    <Section>
-      <div className="grid lg:grid-cols-2 gap-16 items-center">
-        <AnimatedSection>
-          <Badge variant="default" className="mb-4">
-            Our Vision
-          </Badge>
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl mb-6">
-            An AI-Native Approach to{" "}
-            <span className="gradient-text">Data Security</span>
-          </h2>
-          <p className="text-muted-foreground leading-relaxed mb-4">
-            TechD was founded on a simple premise: data security and privacy
-            should not be separate disciplines. By unifying Data Security Posture
-            Management with Privacy Operations in a single AI-native platform,
-            we give security teams complete visibility and automated control
-            over their most sensitive assets.
-          </p>
-          <p className="text-muted-foreground leading-relaxed">
-            Our platform is purpose-built for the enterprise, designed to scale
-            across hybrid and multi-cloud environments, and powered by
-            intelligent automation that reduces manual effort by orders of
-            magnitude.
-          </p>
-        </AnimatedSection>
-        <AnimatedSection delay={0.2}>
-          <div className="rounded-xl border border-border bg-card/50 p-8 glow-border">
-            <div className="grid grid-cols-2 gap-6">
-              {[
-                { icon: Eye, label: "Full Visibility", color: "text-blue-400" },
-                { icon: Brain, label: "AI-Powered", color: "text-cyan-400" },
-                { icon: Shield, label: "Enterprise-Grade", color: "text-purple-400" },
-                { icon: Layers, label: "Unified Platform", color: "text-emerald-400" },
-              ].map((item) => (
-                <div key={item.label} className="text-center">
-                  <div className="inline-flex rounded-lg bg-secondary/50 border border-border p-3 mb-3">
-                    <item.icon className={`h-6 w-6 ${item.color}`} />
-                  </div>
-                  <p className="text-sm font-medium">{item.label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </AnimatedSection>
-      </div>
-    </Section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  CYBER VALLEY                                                       */
-/* ------------------------------------------------------------------ */
-function CyberValleySection() {
-  return (
-    <Section variant="muted">
-      <SectionHeader
-        badge="Innovation Hub"
-        title="Born in"
-        titleGradient="Cyber Valley"
-        description="Our roots in one of Europe's leading AI and cybersecurity research clusters drive our research-first approach to data security."
-      />
-      <AnimatedSection>
-        <div className="grid md:grid-cols-3 gap-8">
-          {[
-            {
-              icon: FlaskConical,
-              title: "Research-Driven",
-              description: "Our classification and risk-scoring models are informed by cutting-edge research in NLP, graph analytics, and privacy-preserving computation.",
-              color: "blue" as const,
-            },
-            {
-              icon: Lightbulb,
-              title: "Innovation First",
-              description: "We invest heavily in R&D, continuously pushing the boundaries of what automated data security can achieve at enterprise scale.",
-              color: "cyan" as const,
-            },
-            {
-              icon: Handshake,
-              title: "Academic Partnerships",
-              description: "Close collaboration with leading universities and research institutes keeps our technology at the frontier of AI-driven cybersecurity.",
-              color: "purple" as const,
-            },
-          ].map((item) => (
-            <StaggerItem key={item.title}>
-              <IconCard
-                icon={item.icon}
-                title={item.title}
-                description={item.description}
-                glowColor={item.color}
-              />
-            </StaggerItem>
-          ))}
-        </div>
-      </AnimatedSection>
-    </Section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  MISSION & VALUES                                                   */
-/* ------------------------------------------------------------------ */
-const values = [
+const MILESTONES: Milestone[] = [
   {
-    icon: Heart,
-    title: "Privacy as a Right",
-    description: "We believe data privacy is a fundamental right, not a compliance checkbox. Every feature we build starts from this principle.",
+    year: "2018",
+    title: "Founded",
+    description: "TechD launched in Cyber Valley, India — bringing cryptography and ML talent under one roof.",
+    icon: Sparkles,
+    border: "border-blue-500/30",
+    bg: "from-blue-500/10 to-transparent",
+    text: "text-blue-400",
   },
   {
-    icon: Eye,
-    title: "Radical Transparency",
-    description: "Open audit logs, explainable AI decisions, and clear documentation. Our customers always know how their data is being protected.",
+    year: "2022",
+    title: "Public Listing",
+    description: "Listed on NSE & BSE. Subjected to public-company governance, SEBI disclosures, and quarterly transparency.",
+    icon: Trophy,
+    border: "border-emerald-500/30",
+    bg: "from-emerald-500/10 to-transparent",
+    text: "text-emerald-400",
   },
   {
-    icon: Shield,
-    title: "Enterprise-Grade Security",
-    description: "We hold ourselves to the same rigorous standards we help our customers achieve. SOC 2, ISO 27001, and beyond.",
+    year: "2024",
+    title: "Platform Launch",
+    description: "Unified DSPM + PrivacyOps + AI Governance platform — the convergence the market was missing.",
+    icon: Rocket,
+    border: "border-purple-500/30",
+    bg: "from-purple-500/10 to-transparent",
+    text: "text-purple-400",
+  },
+  {
+    year: "2026",
+    title: "200+ Customers",
+    description: "Trusted by enterprises across BFSI, healthcare, SaaS, and government in 18 countries.",
+    icon: Globe,
+    border: "border-cyan-500/30",
+    bg: "from-cyan-500/10 to-transparent",
+    text: "text-cyan-400",
+  },
+];
+
+interface Value {
+  icon: LucideIcon;
+  title: string;
+  tagline: string;
+  description: string;
+  accent: string;
+}
+
+const VALUES: Value[] = [
+  {
+    icon: Layers,
+    title: "Privacy as Infrastructure",
+    tagline: "Privacy isn't a feature. It's foundational.",
+    description: "We treat data privacy the way platform engineers treat networking and storage — as bedrock infrastructure, with SLAs, observability, and a clear blast radius.",
+    accent: "from-blue-500/10 to-cyan-500/5 border-blue-500/30",
   },
   {
     icon: Brain,
     title: "AI with Governance",
-    description: "We develop AI responsibly, with built-in governance controls, bias monitoring, and human-in-the-loop safeguards for critical decisions.",
+    tagline: "Every AI capability ships with safety controls. No exceptions.",
+    description: "Model cards, eval gates, prompt-injection defenses, and human-in-the-loop overrides ship with every AI feature — not as an afterthought, but as a release blocker.",
+    accent: "from-purple-500/10 to-fuchsia-500/5 border-purple-500/30",
+  },
+  {
+    icon: Zap,
+    title: "Engineering Rigor",
+    tagline: "We measure everything: P95 latency, RLS coverage, audit completeness.",
+    description: "Numbers, not narrative. We publish internal SLOs, run blameless postmortems, and treat every customer audit as a chance to harden the platform.",
+    accent: "from-emerald-500/10 to-teal-500/5 border-emerald-500/30",
+  },
+  {
+    icon: KeyRound,
+    title: "Customer Sovereignty",
+    tagline: "Your data stays yours. Tenant isolation, your keys, your audit trail.",
+    description: "Cell-level RLS, BYOK / HYOK, tenant-scoped audit logs, and a data-residency model that respects DPDPA, GDPR, and every sovereignty regime in between.",
+    accent: "from-amber-500/10 to-orange-500/5 border-amber-500/30",
   },
 ];
 
-function MissionSection() {
-  return (
-    <Section variant="radial">
-      <SectionHeader
-        badge="Mission & Values"
-        title="What Drives"
-        titleGradient="Our Work"
-        description="Our mission is to make enterprise data security intelligent, automated, and accessible to every organization."
-      />
-      <StaggerContainer className="grid sm:grid-cols-2 gap-6">
-        {values.map((v) => (
-          <StaggerItem key={v.title}>
-            <Card className="h-full card-hover">
-              <CardHeader>
-                <div className="inline-flex rounded-lg bg-primary/10 border border-primary/20 p-2.5 mb-3">
-                  <v.icon className="h-5 w-5 text-primary" />
-                </div>
-                <CardTitle>{v.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {v.description}
-                </p>
-              </CardContent>
-            </Card>
-          </StaggerItem>
-        ))}
-      </StaggerContainer>
-    </Section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  LEADERSHIP                                                         */
-/* ------------------------------------------------------------------ */
-const leaders = [
-  { name: "Dr. Alexandra Richter", title: "CEO & Co-Founder", bio: "Former VP of Security at a Fortune 100 enterprise. PhD in Applied Cryptography." },
-  { name: "Marcus Chen", title: "CTO & Co-Founder", bio: "Previously led data infrastructure at a hyperscale cloud provider. 15+ years in distributed systems." },
-  { name: "Sarah Okonkwo", title: "VP of Engineering", bio: "Built privacy engineering teams at two FAANG companies. Expert in large-scale data processing." },
-  { name: "James Park", title: "Chief Privacy Officer", bio: "Former head of global privacy at a top-tier consulting firm. CIPP/E, CIPM certified." },
-  { name: "Elena Vasquez", title: "VP of Product", bio: "10+ years defining enterprise security products. Background in threat modeling and compliance automation." },
-  { name: "David Osei", title: "VP of Sales", bio: "Scaled enterprise go-to-market at three cybersecurity startups from Series A to acquisition." },
+const RND_CARDS = [
+  {
+    icon: ShieldCheck,
+    title: "Cryptography Research",
+    description: "Hash-chained audit trails, deterministic re-identification protections, and tenant key isolation models — all peer-reviewed in-house.",
+    accent: "border-cyan-500/30 bg-cyan-500/5",
+    iconClass: "text-cyan-400",
+  },
+  {
+    icon: FlaskConical,
+    title: "AI Safety Lab",
+    description: "Prompt-injection benchmarks, jailbreak corpus, model evaluation harnesses, and governance metrics built for high-stakes enterprise AI.",
+    accent: "border-purple-500/30 bg-purple-500/5",
+    iconClass: "text-purple-400",
+  },
+  {
+    icon: Brain,
+    title: "Privacy Engineering",
+    description: "Differential privacy, fail-closed redaction, and consent-receipt schemas — engineered for production volume, not academic toy datasets.",
+    accent: "border-emerald-500/30 bg-emerald-500/5",
+    iconClass: "text-emerald-400",
+  },
 ];
 
-function LeadershipSection() {
-  return (
-    <Section>
-      <SectionHeader
-        badge="Leadership"
-        title="Led by"
-        titleGradient="Industry Veterans"
-        description="Our leadership team brings decades of experience from enterprise security, cloud infrastructure, and AI research."
-      />
-      <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {leaders.map((leader) => (
-          <StaggerItem key={leader.name}>
-            <Card className="h-full card-hover">
-              <CardHeader>
-                <div className="h-14 w-14 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-lg font-bold text-primary mb-3">
-                  {leader.name.split(" ").map((n) => n[0]).join("")}
-                </div>
-                <CardTitle className="text-base">{leader.name}</CardTitle>
-                <CardDescription>{leader.title}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {leader.bio}
-                </p>
-              </CardContent>
-            </Card>
-          </StaggerItem>
-        ))}
-      </StaggerContainer>
-    </Section>
-  );
+interface Leader {
+  name: string;
+  title: string;
+  bio: string;
+  certs: string[];
 }
 
-/* ------------------------------------------------------------------ */
-/*  BY THE NUMBERS                                                     */
-/* ------------------------------------------------------------------ */
-const stats = [
-  { value: "43+", label: "Data Connectors", color: "text-blue-400" },
-  { value: "12", label: "Remediation Actions", color: "text-cyan-400" },
-  { value: "8", label: "Workflow Queues", color: "text-purple-400" },
-  { value: "60+", label: "Protected Tables", color: "text-emerald-400" },
-  { value: "10+", label: "Regulations Supported", color: "text-blue-400" },
-  { value: "99.9%", label: "Uptime SLA", color: "text-cyan-400" },
+const LEADERS: Leader[] = [
+  {
+    name: "Dr. Aanya Sharma",
+    title: "Chief Executive Officer",
+    bio: "ex-Microsoft Azure Security, ex-Symantec. 20 years scaling enterprise security from on-prem to hyperscale cloud.",
+    certs: ["CIPP/E", "CISM", "PhD Cryptography"],
+  },
+  {
+    name: "Rohan Iyer",
+    title: "Chief Technology Officer",
+    bio: "ex-AWS Identity, ex-Cloudflare. Built distributed systems serving billions of requests/day. Open-source maintainer.",
+    certs: ["CKA", "AWS Solutions Architect", "MS CMU"],
+  },
+  {
+    name: "Priya Menon",
+    title: "Chief Privacy Officer",
+    bio: "ex-Deloitte Global Privacy, ex-Infosys DPO. Authored DPDPA implementation guidance for 40+ Indian enterprises.",
+    certs: ["CIPP/E", "CIPM", "DPO Certified", "FIP"],
+  },
+  {
+    name: "Marcus Lee",
+    title: "VP of Engineering",
+    bio: "ex-Google Cloud Security, ex-Palo Alto Networks. Led the platform org from Series B to IPO at a previous company.",
+    certs: ["CISSP", "OSCP", "MS Stanford"],
+  },
+  {
+    name: "Anjali Krishnan",
+    title: "VP of Product",
+    bio: "ex-Snowflake, ex-Salesforce. Defined data governance roadmaps used by Fortune 500 firms across BFSI and healthcare.",
+    certs: ["CIPM", "PMP", "MBA Wharton"],
+  },
+  {
+    name: "David Okonkwo",
+    title: "VP of Sales (Enterprise)",
+    bio: "ex-Splunk Enterprise, ex-CrowdStrike. Scaled enterprise GTM at three cybersecurity companies from Series A to acquisition.",
+    certs: ["CISSP", "CSAP", "20+ years"],
+  },
 ];
 
-function StatsSection() {
-  return (
-    <Section variant="muted">
-      <SectionHeader
-        badge="By The Numbers"
-        title="Platform at"
-        titleGradient="a Glance"
-      />
-      <AnimatedSection>
-        <div className="rounded-xl border border-border bg-card/50 glow-border p-10 lg:p-14">
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-10 text-center">
-            {stats.map((s) => (
-              <div key={s.label}>
-                <motion.p
-                  className={`text-4xl lg:text-5xl font-bold mb-2 ${s.color}`}
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.5, type: "spring" }}
-                >
-                  {s.value}
-                </motion.p>
-                <p className="text-sm text-muted-foreground">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </AnimatedSection>
-    </Section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  PARTNERS & CERTIFICATIONS                                          */
-/* ------------------------------------------------------------------ */
-const certifications = [
-  "SOC 2 Type II",
-  "ISO 27001",
-  "GDPR Compliant",
-  "HIPAA Ready",
-  "CSA STAR",
-  "AWS Partner",
-  "Azure Partner",
-  "GCP Partner",
+const RECOGNITION = [
+  {
+    icon: Newspaper,
+    title: "Featured in TechCrunch",
+    subtitle: "Cyber Valley spotlight · 2026",
+    accent: "border-cyan-500/30 bg-cyan-500/5",
+  },
+  {
+    icon: Award,
+    title: "Gartner DSPM Cool Vendor",
+    subtitle: "2026 cohort",
+    accent: "border-emerald-500/30 bg-emerald-500/5",
+  },
+  {
+    icon: Trophy,
+    title: "BFSI Tech Awards",
+    subtitle: "PrivacyOps Innovation · 2026",
+    accent: "border-amber-500/30 bg-amber-500/5",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Cyber Excellence Awards",
+    subtitle: "DSPM Platform of the Year · 2026",
+    accent: "border-purple-500/30 bg-purple-500/5",
+  },
 ];
 
-function PartnersSection() {
-  return (
-    <Section>
-      <SectionHeader
-        badge="Trust & Compliance"
-        title="Partners &"
-        titleGradient="Certifications"
-        description="We maintain the industry's highest security and compliance standards."
-      />
-      <StaggerContainer className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {certifications.map((cert) => (
-          <StaggerItem key={cert}>
-            <div className="rounded-xl border border-border bg-card p-5 text-center card-hover">
-              <Award className="h-5 w-5 text-primary mx-auto mb-3" />
-              <p className="font-semibold text-sm">{cert}</p>
-            </div>
-          </StaggerItem>
-        ))}
-      </StaggerContainer>
-    </Section>
-  );
-}
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
-/* ------------------------------------------------------------------ */
-/*  PAGE                                                               */
-/* ------------------------------------------------------------------ */
 export default function AboutPage() {
   return (
-    <>
-      <HeroSection />
-      <VisionSection />
-      <CyberValleySection />
-      <MissionSection />
-      <LeadershipSection />
-      <StatsSection />
-      <PartnersSection />
+    <main className="relative overflow-hidden">
+      {/* ─────────────────────────────────────────────────────────────────
+          1. HERO
+         ───────────────────────────────────────────────────────────────── */}
+      <section className="relative pt-32 pb-24 lg:pt-40 lg:pb-32 overflow-hidden">
+        <div className="absolute inset-0 radial-hero" />
+        <div className="absolute inset-0 grid-bg" />
+
+        <div className="relative mx-auto max-w-5xl px-6 lg:px-8 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.25em] text-primary mb-4">
+              About TechD Cybersecurity
+            </div>
+            <Badge variant="default" className="mb-6">
+              <Building2 className="h-3 w-3 mr-1.5" /> Listed Cybersecurity Company · Cyber Valley
+            </Badge>
+            <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl mb-6 text-balance">
+              Built in <span className="gradient-text">Cyber Valley</span>.
+              <br className="hidden sm:block" /> Engineered for the{" "}
+              <span className="gradient-text">AI era</span>.
+            </h1>
+            <p className="text-lg text-muted-foreground max-w-3xl mx-auto leading-relaxed text-pretty">
+              TechD Cybersecurity is a publicly-listed enterprise security company building the
+              unified data security and privacy operations platform for the AI era. Headquartered
+              in India&apos;s Cyber Valley, serving enterprises globally.
+            </p>
+
+            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Button variant="outline" size="xl" asChild>
+                <Link href="/investors" className="gap-2">
+                  Investor Relations <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button variant="secondary" size="xl" asChild>
+                <Link href="/careers">Careers · 30+ Open Roles</Link>
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ─────────────────────────────────────────────────────────────────
+          2. STATS BAR
+         ───────────────────────────────────────────────────────────────── */}
+      <Section variant="muted" className="!py-16">
+        <AnimatedSection>
+          <div className="rounded-2xl border border-border bg-card/40 p-8 lg:p-10">
+            <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="flex flex-col">
+                <div className="font-display text-3xl font-bold gradient-text leading-none mb-2">
+                  Listed
+                </div>
+                <p className="text-sm font-semibold text-foreground">NSE &amp; BSE</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Public-company governance
+                </p>
+              </div>
+              <MetricCounter value={200} suffix="+" label="Enterprise Customers" description="Across 18 countries" />
+              <MetricCounter value={43} suffix="+" label="Native Connectors" description="Cloud, SaaS, OT" />
+              <MetricCounter value={16} label="Regulations Automated" description="DPDPA, GDPR, HIPAA + more" />
+              <MetricCounter value={99.99} decimals={2} suffix="%" label="Platform SLA" description="Triple-region failover" />
+            </div>
+          </div>
+        </AnimatedSection>
+      </Section>
+
+      {/* ─────────────────────────────────────────────────────────────────
+          3. THE TECHD STORY
+         ───────────────────────────────────────────────────────────────── */}
+      <Section pattern="dots">
+        <SectionHeader
+          eyebrow="Our Story"
+          title="From Cyber Valley to a"
+          titleGradient="listed cybersecurity company."
+        />
+
+        <div className="grid gap-12 lg:grid-cols-2 lg:gap-16 items-start">
+          <AnimatedSection>
+            <div className="space-y-6 text-muted-foreground leading-relaxed">
+              <p className="text-base">
+                <span className="text-foreground font-semibold">Cyber Valley origin.</span>{" "}
+                TechD was founded in 2018 in Cyber Valley — India&apos;s emerging cybersecurity
+                capital, where alumni from the IITs, IIITs, and global hyperscalers converge on
+                hard problems. The founding thesis: India would become the world&apos;s most
+                consequential privacy and security market, and the next generation of platforms
+                had to be built here.
+              </p>
+              <p className="text-base">
+                <span className="text-foreground font-semibold">From security tools to a unified platform.</span>{" "}
+                Enterprises were drowning in disconnected DSPM, PrivacyOps, and AI governance
+                products — each with its own connector library, audit log, and policy engine.
+                We saw that the future required convergence: one data graph, one policy engine,
+                one audit trail. So we built it.
+              </p>
+              <p className="text-base">
+                <span className="text-foreground font-semibold">Public listing.</span>{" "}
+                In 2022, TechD listed on NSE and BSE. We chose the public-company path
+                deliberately — the transparency, governance, and disclosure standards required of
+                listed entities align with the trust we ask of our enterprise customers. Quarterly
+                transparency makes us better operators, and gives every customer visibility into
+                our long-term commitment.
+              </p>
+            </div>
+          </AnimatedSection>
+
+          <AnimatedSection delay={0.2}>
+            <div className="grid grid-cols-2 gap-4">
+              {MILESTONES.map((m) => {
+                const Icon = m.icon;
+                return (
+                  <div
+                    key={m.year}
+                    className={cn(
+                      "rounded-2xl border bg-gradient-to-br p-5 card-hover",
+                      m.border,
+                      m.bg,
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+                        {m.year}
+                      </span>
+                      <Icon className={cn("h-5 w-5", m.text)} />
+                    </div>
+                    <h4 className="text-base font-semibold mb-2">{m.title}</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {m.description}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </AnimatedSection>
+        </div>
+      </Section>
+
+      {/* ─────────────────────────────────────────────────────────────────
+          4. MISSION & VALUES
+         ───────────────────────────────────────────────────────────────── */}
+      <Section variant="radial">
+        <SectionHeader
+          eyebrow="Mission &amp; Values"
+          title="What we believe."
+          titleGradient="What we ship by."
+          description="Four principles that show up in every release, every customer call, and every internal review."
+        />
+
+        <StaggerContainer className="grid gap-6 sm:grid-cols-2">
+          {VALUES.map((v) => {
+            const Icon = v.icon;
+            return (
+              <StaggerItem key={v.title}>
+                <div
+                  className={cn(
+                    "h-full rounded-2xl border bg-gradient-to-br p-7 card-hover",
+                    v.accent,
+                  )}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex-none rounded-xl border border-white/10 bg-background/60 p-3">
+                      <Icon className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold mb-1">{v.title}</h3>
+                      <p className="text-xs font-medium italic text-muted-foreground mb-3">
+                        {v.tagline}
+                      </p>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {v.description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </StaggerItem>
+            );
+          })}
+        </StaggerContainer>
+      </Section>
+
+      {/* ─────────────────────────────────────────────────────────────────
+          5. CYBER VALLEY R&D
+         ───────────────────────────────────────────────────────────────── */}
+      <Section variant="featured">
+        <div className="max-w-3xl mx-auto text-center mb-14">
+          <Badge variant="cyan" className="mb-6">
+            <FlaskConical className="h-3 w-3 mr-1.5" /> R&amp;D · Cyber Valley
+          </Badge>
+          <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl text-balance">
+            <span className="gradient-text">Cyber Valley</span> — where India&apos;s privacy and
+            security future is built.
+          </h2>
+          <p className="mt-4 text-lg text-muted-foreground leading-relaxed text-pretty">
+            Our R&amp;D center in Cyber Valley brings together cryptographers, ML researchers,
+            and privacy engineers from India&apos;s top institutes (IITs, IIITs) and global tech.
+            Every TechD platform capability has a research line behind it.
+          </p>
+        </div>
+
+        <StaggerContainer className="grid gap-6 md:grid-cols-3">
+          {RND_CARDS.map((c) => {
+            const Icon = c.icon;
+            return (
+              <StaggerItem key={c.title}>
+                <div className={cn("h-full rounded-2xl border p-7 card-hover", c.accent)}>
+                  <Icon className={cn("h-7 w-7 mb-4", c.iconClass)} />
+                  <h3 className="text-lg font-semibold mb-2">{c.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{c.description}</p>
+                </div>
+              </StaggerItem>
+            );
+          })}
+        </StaggerContainer>
+      </Section>
+
+      {/* ─────────────────────────────────────────────────────────────────
+          6. LEADERSHIP
+         ───────────────────────────────────────────────────────────────── */}
+      <Section>
+        <SectionHeader
+          eyebrow="Leadership"
+          title="Operators from"
+          titleGradient="the world's hardest security teams."
+          description="Our leadership team brings decades of experience from hyperscale cloud, enterprise security, and global privacy practice."
+        />
+
+        <StaggerContainer className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {LEADERS.map((leader) => {
+            const initials = leader.name
+              .split(" ")
+              .filter((p) => !p.startsWith("Dr"))
+              .map((n) => n[0])
+              .join("")
+              .slice(0, 2);
+            return (
+              <StaggerItem key={leader.name}>
+                <Card className="h-full card-hover">
+                  <CardHeader>
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-primary/20 to-cyan-500/20 border border-primary/30 flex items-center justify-center text-base font-bold text-primary shrink-0">
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-base">{leader.name}</CardTitle>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {leader.title}
+                        </p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                      {leader.bio}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 pt-3 border-t border-border/60">
+                      {leader.certs.map((cert) => (
+                        <span
+                          key={cert}
+                          className="inline-flex items-center rounded-md border border-border bg-background/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                        >
+                          {cert}
+                        </span>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </StaggerItem>
+            );
+          })}
+        </StaggerContainer>
+      </Section>
+
+      {/* ─────────────────────────────────────────────────────────────────
+          7. RECOGNITION
+         ───────────────────────────────────────────────────────────────── */}
+      <Section variant="muted">
+        <SectionHeader
+          eyebrow="Recognition"
+          title="Press, awards,"
+          titleGradient="and analyst recognition."
+        />
+
+        <StaggerContainer className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {RECOGNITION.map((r) => {
+            const Icon = r.icon;
+            return (
+              <StaggerItem key={r.title}>
+                <div className={cn("h-full rounded-2xl border p-6 text-center card-hover", r.accent)}>
+                  <Icon className="h-7 w-7 mx-auto mb-4 text-foreground/80" />
+                  <h3 className="text-sm font-semibold mb-1.5">{r.title}</h3>
+                  <p className="text-xs text-muted-foreground">{r.subtitle}</p>
+                </div>
+              </StaggerItem>
+            );
+          })}
+        </StaggerContainer>
+
+        <AnimatedSection delay={0.2}>
+          <div className="mt-12 mx-auto max-w-2xl rounded-xl border border-border bg-card/40 p-6 text-center">
+            <Heart className="h-5 w-5 text-rose-400 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Behind every award is a customer who chose to stake their compliance program on us.
+              That trust is the only metric that ultimately matters.
+            </p>
+          </div>
+        </AnimatedSection>
+      </Section>
+
+      {/* ─────────────────────────────────────────────────────────────────
+          8. CTA
+         ───────────────────────────────────────────────────────────────── */}
       <CTASection
-        title="Join Our Mission to"
-        titleGradient="Secure the World's Data."
-        description="We are building the future of enterprise data security. See how TechD PrivacyOps can transform your organization's data protection posture."
-        primaryCta="Book a Demo"
-        primaryHref="/contact"
-        secondaryCta="View Careers"
-        secondaryHref="/contact"
+        title="Join the mission."
+        titleGradient="30+ open positions."
+        description="We're hiring across engineering, research, product, and go-to-market. If you want to build privacy and security infrastructure for the AI era, we want to talk."
+        primaryCta="View Open Roles"
+        primaryHref="/careers"
+        secondaryCta="Investor Relations"
+        secondaryHref="/investors"
       />
-    </>
+    </main>
   );
 }

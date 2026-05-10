@@ -12,6 +12,10 @@ const badgeVariants = cva(
         purple: "bg-purple-500/10 text-purple-400 border border-purple-500/20",
         green: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
         outline: "border border-border text-muted-foreground",
+        amber: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
+        danger: "bg-red-500/10 text-red-400 border border-red-500/20",
+        dpdpa: "bg-orange-500/10 text-orange-400 border border-orange-500/20",
+        live: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 tag-live",
       },
     },
     defaultVariants: {

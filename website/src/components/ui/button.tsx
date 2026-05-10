@@ -19,6 +19,8 @@ const buttonVariants = cva(
         ghost: "hover:bg-secondary hover:text-foreground",
         glow: "bg-primary text-primary-foreground shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:bg-primary/90",
         cyan: "bg-accent text-accent-foreground shadow-lg shadow-accent/20 hover:bg-accent/90",
+        gradient: "text-white shadow-lg shadow-primary/30 hover:shadow-primary/50 bg-[linear-gradient(135deg,#3b82f6,#06b6d4,#8b5cf6)] bg-[length:200%_100%] hover:bg-[position:100%_0]",
+        emerald: "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 hover:bg-emerald-500/90",
       },
       size: {
         sm: "h-9 px-4 text-sm",

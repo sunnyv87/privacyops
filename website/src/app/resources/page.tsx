@@ -1,24 +1,66 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Section, SectionHeader } from "@/components/ui/section";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Section } from "@/components/ui/section";
 import { CTASection } from "@/components/shared/cta-section";
 import { AnimatedSection, StaggerContainer, StaggerItem } from "@/components/shared/animated-section";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   ArrowRight,
+  ChevronRight,
+  Download,
   FileText,
   Building2,
   BookOpen,
-  Code2,
   Video,
-  Shield,
-  ChevronRight,
-  Download,
+  BarChart3,
+  ClipboardList,
+  Star,
+  Clock,
+  FileDown,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { resources, type Resource } from "@/data/resources";
+
+/* ------------------------------------------------------------------ */
+/*  TYPES & MAPS                                                       */
+/* ------------------------------------------------------------------ */
+type Filter = "All" | Resource["type"];
+
+const filterTabs: Filter[] = [
+  "All",
+  "Whitepaper",
+  "Case Study",
+  "Guide",
+  "Webinar",
+  "Report",
+  "Template",
+];
+
+const typeBadgeMap: Record<
+  Resource["type"],
+  "default" | "cyan" | "purple" | "green" | "amber" | "dpdpa"
+> = {
+  Whitepaper: "cyan",
+  "Case Study": "purple",
+  Guide: "green",
+  Webinar: "amber",
+  Report: "default",
+  Template: "dpdpa",
+};
+
+const typeIconMap: Record<Resource["type"], React.ComponentType<{ className?: string }>> = {
+  Whitepaper: FileText,
+  "Case Study": Building2,
+  Guide: BookOpen,
+  Webinar: Video,
+  Report: BarChart3,
+  Template: ClipboardList,
+};
 
 /* ------------------------------------------------------------------ */
 /*  HERO                                                               */
@@ -29,26 +71,38 @@ function HeroSection() {
       <div className="absolute inset-0 radial-hero" />
       <div className="absolute inset-0 grid-bg" />
 
-      <div className="relative mx-auto max-w-7xl px-6 lg:px-8 pt-32 pb-16 w-full text-center">
+      <div className="relative mx-auto max-w-7xl px-6 lg:px-8 pt-32 pb-20 w-full text-center">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7 }}
         >
-          <Badge variant="cyan" className="mb-6">
-            Learn
-          </Badge>
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-primary mb-5">
+            RESOURCE CENTER
+          </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6 max-w-4xl mx-auto">
-            Resource{" "}
-            <span className="gradient-text">Center</span>
+          <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] mb-6 max-w-4xl mx-auto text-balance">
+            Resources for{" "}
+            <span className="gradient-text">data security leaders</span>.
           </h1>
 
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-8">
-            Everything you need to master data security and privacy operations
-            — whitepapers, case studies, compliance guides, and technical
-            documentation.
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-10 text-pretty">
+            Whitepapers, research reports, case studies, and practitioner-grade
+            guides — all written by the engineering team building the TechD
+            platform.
           </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <FileDown className="h-3.5 w-3.5 text-primary" />
+              {resources.length} downloadable resources
+            </span>
+            <span className="text-border">·</span>
+            <span className="inline-flex items-center gap-1.5">
+              <Star className="h-3.5 w-3.5 text-amber-400" />
+              {resources.filter((r) => r.featured).length} featured this month
+            </span>
+          </div>
         </motion.div>
       </div>
     </section>
@@ -56,221 +110,219 @@ function HeroSection() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  DATA                                                               */
+/*  FEATURED                                                           */
 /* ------------------------------------------------------------------ */
-interface ResourceCategory {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  description: string;
-  count: number;
-  color: string;
-  borderColor: string;
-  bgColor: string;
-  items: string[];
-}
+function FeaturedSection() {
+  const featured = resources.filter((r) => r.featured);
 
-const categories: ResourceCategory[] = [
-  {
-    icon: FileText,
-    title: "Whitepapers",
-    description: "In-depth research and analysis on data security trends, threats, and best practices.",
-    count: 8,
-    color: "text-blue-400",
-    borderColor: "hover:border-blue-500/40",
-    bgColor: "bg-blue-500/10",
-    items: [
-      "Shadow Data: The Hidden Risk in Enterprise Environments",
-      "The Enterprise Guide to Data Classification at Scale",
-      "Zero Trust Architecture for Data Security",
-      "AI Governance: Frameworks for Responsible Deployment",
-    ],
-  },
-  {
-    icon: Building2,
-    title: "Case Studies",
-    description: "Real-world success stories from enterprises that transformed their data security posture.",
-    count: 6,
-    color: "text-cyan-400",
-    borderColor: "hover:border-cyan-500/40",
-    bgColor: "bg-cyan-500/10",
-    items: [
-      "Fortune 500 Bank Achieves Continuous Compliance",
-      "Healthcare Network Reduces DSAR Time by 95%",
-      "Global Retailer Secures 2M+ Customer Records",
-      "Insurance Provider Automates CCPA Workflows",
-    ],
-  },
-  {
-    icon: Shield,
-    title: "Compliance Guides",
-    description: "Step-by-step guides for achieving and maintaining compliance with major regulations.",
-    count: 10,
-    color: "text-purple-400",
-    borderColor: "hover:border-purple-500/40",
-    bgColor: "bg-purple-500/10",
-    items: [
-      "GDPR Compliance Automation Playbook",
-      "HIPAA Data Security Requirements Guide",
-      "CCPA/CPRA Implementation Checklist",
-      "SOC 2 Evidence Collection with TechD",
-    ],
-  },
-  {
-    icon: BookOpen,
-    title: "Technical Documentation",
-    description: "Comprehensive platform documentation, architecture guides, and deployment references.",
-    count: 25,
-    color: "text-emerald-400",
-    borderColor: "hover:border-emerald-500/40",
-    bgColor: "bg-emerald-500/10",
-    items: [
-      "Platform Architecture Overview",
-      "Connector Configuration Guide",
-      "Classification Engine Deep-Dive",
-      "Role-Based Access Control Setup",
-    ],
-  },
-  {
-    icon: Video,
-    title: "Webinars",
-    description: "On-demand webinars featuring product demos, expert panels, and security workshops.",
-    count: 12,
-    color: "text-blue-400",
-    borderColor: "hover:border-blue-500/40",
-    bgColor: "bg-blue-500/10",
-    items: [
-      "Live Demo: DSPM in Action (45 min)",
-      "Panel: The Future of Privacy Engineering",
-      "Workshop: Building a Data Security Program",
-      "Fireside Chat: AI Co-Pilot for Security Teams",
-    ],
-  },
-  {
-    icon: Code2,
-    title: "API Documentation",
-    description: "Full API reference, SDKs, and integration guides for developers building on TechD.",
-    count: 15,
-    color: "text-cyan-400",
-    borderColor: "hover:border-cyan-500/40",
-    bgColor: "bg-cyan-500/10",
-    items: [
-      "REST API Reference (v2)",
-      "Python SDK Quickstart",
-      "Webhook Configuration Guide",
-      "Custom Connector Development Kit",
-    ],
-  },
-];
-
-/* ------------------------------------------------------------------ */
-/*  CATEGORIES GRID                                                    */
-/* ------------------------------------------------------------------ */
-function CategoriesSection() {
   return (
-    <Section>
-      <SectionHeader
-        badge="Browse Resources"
-        title="Explore by"
-        titleGradient="Category"
-        description="Curated resources to help your team implement, optimize, and scale enterprise data security."
-      />
-      <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-        {categories.map((cat) => (
-          <StaggerItem key={cat.title}>
-            <Card className={`h-full card-hover ${cat.borderColor}`}>
-              <CardHeader>
-                <div className="flex items-center justify-between mb-3">
-                  <div className={`inline-flex rounded-lg border border-border p-2.5 ${cat.bgColor}`}>
-                    <cat.icon className={`h-5 w-5 ${cat.color}`} />
+    <Section variant="muted">
+      <AnimatedSection>
+        <div className="flex items-center gap-2 mb-2 justify-center">
+          <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-400">
+            Editor&apos;s Picks
+          </div>
+        </div>
+        <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-center mb-12 text-balance">
+          Featured this <span className="gradient-text">quarter</span>
+        </h2>
+      </AnimatedSection>
+
+      <StaggerContainer className="grid md:grid-cols-3 gap-6">
+        {featured.map((r) => {
+          const Icon = typeIconMap[r.type];
+          return (
+            <StaggerItem key={r.slug}>
+              <Link href={`/resources/${r.slug}`} className="block h-full group">
+                <Card className="h-full card-hover overflow-hidden relative">
+                  {/* Featured ribbon */}
+                  <div className="absolute top-0 right-0 z-10">
+                    <div className="bg-amber-500/15 border-l border-b border-amber-500/30 text-amber-400 text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-bl-lg">
+                      Featured
+                    </div>
                   </div>
-                  <Badge variant="outline" className="text-xs">
-                    {cat.count} resources
-                  </Badge>
-                </div>
-                <CardTitle className="text-lg">{cat.title}</CardTitle>
-                <CardDescription>{cat.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {cat.items.map((item) => (
-                    <li key={item}>
-                      <button className="flex items-start gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors group/item w-full text-left cursor-pointer">
-                        <ChevronRight className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground/50 group-hover/item:text-primary transition-colors" />
-                        <span className="leading-snug">{item}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </StaggerItem>
-        ))}
+
+                  {/* Cover */}
+                  <div className="relative h-48 bg-gradient-to-br from-primary/15 via-accent/10 to-purple-500/15 border-b border-border overflow-hidden">
+                    <div className="absolute inset-0 grid-bg opacity-30" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="rounded-2xl bg-background/60 backdrop-blur border border-border p-4">
+                        <Icon className="h-8 w-8 text-primary" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <CardHeader className="pb-3">
+                    <Badge
+                      variant={typeBadgeMap[r.type]}
+                      className="w-fit mb-3 text-[10px]"
+                    >
+                      {r.type}
+                    </Badge>
+                    <CardTitle className="text-base leading-snug group-hover:text-primary transition-colors text-balance">
+                      {r.title}
+                    </CardTitle>
+                  </CardHeader>
+
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-5 line-clamp-3 text-pretty">
+                      {r.description}
+                    </p>
+
+                    <div className="flex items-center justify-between text-xs text-muted-foreground pt-4 border-t border-border">
+                      <div className="flex items-center gap-3">
+                        {r.pages && (
+                          <span className="inline-flex items-center gap-1">
+                            <FileText className="h-3 w-3" />
+                            {r.pages} pages
+                          </span>
+                        )}
+                        {r.duration && (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {r.duration}
+                          </span>
+                        )}
+                      </div>
+                      <span className="inline-flex items-center text-primary font-medium gap-1 group-hover:gap-2 transition-all">
+                        Download <ChevronRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            </StaggerItem>
+          );
+        })}
       </StaggerContainer>
     </Section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  FEATURED RESOURCES                                                 */
+/*  ALL RESOURCES                                                      */
 /* ------------------------------------------------------------------ */
-const featured = [
-  {
-    badge: "Whitepaper",
-    badgeVariant: "cyan" as const,
-    title: "The 2026 State of DSPM Report",
-    description: "Our annual analysis of data security posture management trends, challenges, and predictions based on data from 500+ enterprises.",
-    cta: "Download Report",
-  },
-  {
-    badge: "Guide",
-    badgeVariant: "green" as const,
-    title: "Getting Started with TechD PrivacyOps",
-    description: "A comprehensive onboarding guide covering initial setup, connector configuration, classification tuning, and first-week milestones.",
-    cta: "Read Guide",
-  },
-  {
-    badge: "Case Study",
-    badgeVariant: "purple" as const,
-    title: "Enterprise Deployment Playbook",
-    description: "Lessons learned from deploying TechD PrivacyOps across Fortune 500 organizations, including timelines, team structures, and success metrics.",
-    cta: "View Case Study",
-  },
-];
+function AllResourcesSection() {
+  const [activeFilter, setActiveFilter] = useState<Filter>("All");
 
-function FeaturedSection() {
+  const filtered =
+    activeFilter === "All"
+      ? resources
+      : resources.filter((r) => r.type === activeFilter);
+
   return (
-    <Section variant="muted">
-      <SectionHeader
-        badge="Featured"
-        title="Most Popular"
-        titleGradient="Resources"
-      />
-      <StaggerContainer className="grid md:grid-cols-3 gap-8">
-        {featured.map((item) => (
-          <StaggerItem key={item.title}>
-            <Card className="h-full card-hover">
-              {/* Placeholder cover */}
-              <div className="h-40 bg-gradient-to-br from-primary/5 to-accent/5 border-b border-border flex items-center justify-center">
-                <Download className="h-8 w-8 text-muted-foreground/40" />
-              </div>
-              <CardHeader className="pb-2">
-                <Badge variant={item.badgeVariant} className="mb-2 w-fit text-xs">
-                  {item.badge}
-                </Badge>
-                <CardTitle className="text-base">{item.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                  {item.description}
-                </p>
-                <Button variant="outline" size="sm" className="gap-2">
-                  {item.cta} <ArrowRight className="h-3 w-3" />
-                </Button>
-              </CardContent>
-            </Card>
-          </StaggerItem>
-        ))}
+    <Section>
+      <AnimatedSection>
+        <div className="text-center mb-12">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-primary mb-3">
+            Browse the Library
+          </div>
+          <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight mb-4 text-balance">
+            Every resource we&apos;ve <span className="gradient-text">published</span>
+          </h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto leading-relaxed text-pretty">
+            Filter by format. Every resource is gated only by an email — no
+            sales calls required to access the content.
+          </p>
+        </div>
+      </AnimatedSection>
+
+      {/* Filter Tabs */}
+      <AnimatedSection>
+        <div className="flex flex-wrap gap-2 justify-center mb-12">
+          {filterTabs.map((tab) => {
+            const count =
+              tab === "All"
+                ? resources.length
+                : resources.filter((r) => r.type === tab).length;
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveFilter(tab)}
+                className={cn(
+                  "rounded-full px-5 py-2 text-sm font-medium transition-all cursor-pointer inline-flex items-center gap-2",
+                  activeFilter === tab
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                    : "bg-secondary/50 text-muted-foreground border border-border hover:border-primary/30 hover:text-foreground"
+                )}
+              >
+                {tab}
+                <span
+                  className={cn(
+                    "text-[10px] font-mono px-1.5 py-0.5 rounded",
+                    activeFilter === tab
+                      ? "bg-primary-foreground/20"
+                      : "bg-background/60"
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </AnimatedSection>
+
+      <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filtered.map((r) => {
+          const Icon = typeIconMap[r.type];
+          return (
+            <StaggerItem key={r.slug}>
+              <Link href={`/resources/${r.slug}`} className="block h-full group">
+                <Card className="h-full card-hover flex flex-col">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="rounded-lg bg-primary/10 border border-primary/20 p-2">
+                        <Icon className="h-4 w-4 text-primary" />
+                      </div>
+                      <Badge variant={typeBadgeMap[r.type]} className="text-[10px]">
+                        {r.type}
+                      </Badge>
+                    </div>
+                    <CardTitle className="text-base leading-snug group-hover:text-primary transition-colors text-balance">
+                      {r.title}
+                    </CardTitle>
+                  </CardHeader>
+
+                  <CardContent className="flex-1 flex flex-col">
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-5 line-clamp-3 text-pretty">
+                      {r.description}
+                    </p>
+
+                    <div className="mt-auto pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+                      <div className="flex items-center gap-3">
+                        {r.pages && (
+                          <span className="inline-flex items-center gap-1">
+                            <FileText className="h-3 w-3" />
+                            {r.pages} pages
+                          </span>
+                        )}
+                        {r.duration && (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {r.duration}
+                          </span>
+                        )}
+                        {!r.pages && !r.duration && <span>{r.date}</span>}
+                      </div>
+                      <span className="inline-flex items-center text-primary font-medium gap-1 group-hover:gap-2 transition-all">
+                        Download <ChevronRight className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            </StaggerItem>
+          );
+        })}
       </StaggerContainer>
+
+      {filtered.length === 0 && (
+        <div className="text-center py-16 text-muted-foreground">
+          No resources of this type yet — check back soon.
+        </div>
+      )}
     </Section>
   );
 }
@@ -282,16 +334,16 @@ export default function ResourcesPage() {
   return (
     <>
       <HeroSection />
-      <CategoriesSection />
       <FeaturedSection />
+      <AllResourcesSection />
       <CTASection
-        title="Ready to See It"
-        titleGradient="in Action?"
-        description="Explore how TechD PrivacyOps can transform your data security and compliance operations with a personalized demo."
+        title="See it work on"
+        titleGradient="your data."
+        description="The platform behind these guides is the same one shipping in production at top-tier banks, healthcare networks, and global SaaS leaders. Book a demo and we will run it on a slice of your environment."
         primaryCta="Book a Demo"
         primaryHref="/contact"
-        secondaryCta="Contact Sales"
-        secondaryHref="/contact"
+        secondaryCta="Read the Blog"
+        secondaryHref="/blog"
       />
     </>
   );

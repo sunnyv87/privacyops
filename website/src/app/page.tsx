@@ -2,40 +2,52 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
 import { Section, SectionHeader } from "@/components/ui/section";
 import { IconCard } from "@/components/ui/icon-card";
 import { CTASection } from "@/components/shared/cta-section";
-import { AnimatedSection, StaggerContainer, StaggerItem } from "@/components/shared/animated-section";
+import {
+  AnimatedSection,
+  StaggerContainer,
+  StaggerItem,
+} from "@/components/shared/animated-section";
+import { DataGraphVisual } from "@/components/shared/data-graph-visual";
+import { LogoMarquee } from "@/components/shared/logo-marquee";
+import { MetricCounter } from "@/components/shared/metric-counter";
+import { CompareTable } from "@/components/shared/compare-table";
+import { LiveDashboardMock } from "@/components/shared/live-dashboard-mock";
+import { RegulationRibbon } from "@/components/shared/regulation-ribbon";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   ArrowRight,
   Shield,
+  Brain,
+  Scale,
+  Layers,
+  Cpu,
+  Lock,
+  Globe,
   Search,
   Tags,
-  FileCheck,
-  ToggleRight,
+  Map as MapIcon,
   Wrench,
-  Scale,
-  Bot,
-  Activity,
-  Database,
-  Cloud,
-  Server,
-  Globe,
-  Lock,
   ChevronRight,
-  Layers,
-  Brain,
-  Zap,
-  CheckCircle2,
   Quote,
-  Star,
+  Sparkles,
+  Workflow,
+  Database,
+  Bot,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
-/*  1. HERO SECTION                                                    */
+/*  1. HERO                                                            */
 /* ------------------------------------------------------------------ */
 function HeroSection() {
   return (
@@ -43,34 +55,45 @@ function HeroSection() {
       <div className="absolute inset-0 radial-hero" />
       <div className="absolute inset-0 grid-bg" />
 
-      <div className="relative mx-auto max-w-7xl px-6 lg:px-8 pt-24 pb-16 w-full">
-        <div className="grid lg:grid-cols-2 gap-16 items-center">
+      {/* Subtle accent orbs */}
+      <div className="absolute top-1/4 -left-32 h-96 w-96 rounded-full bg-blue-500/10 blur-[120px]" />
+      <div className="absolute bottom-1/4 -right-32 h-96 w-96 rounded-full bg-cyan-500/10 blur-[120px]" />
+
+      <div className="relative mx-auto max-w-7xl px-6 lg:px-8 pt-28 pb-20 w-full">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left — Copy */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
           >
-            <Badge variant="cyan" className="mb-6">
-              AI-Native DSPM + PrivacyOps Platform
-            </Badge>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80 mb-5">
+              DSPM · PrivacyOps · AI Governance
+            </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
-              Discover, Classify, and Remediate Data Risk{" "}
-              <span className="gradient-text">Automatically.</span>
+            <div className="mb-7">
+              <Badge variant="live">v1.0 · Production</Badge>
+            </div>
+
+            <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] text-balance mb-7">
+              The Unified{" "}
+              <span className="gradient-text">
+                DSPM + PrivacyOps + AI Security
+              </span>{" "}
+              Platform
             </h1>
 
-            <p className="text-lg text-muted-foreground max-w-xl leading-relaxed mb-8">
-              The enterprise platform that unifies Data Security Posture
-              Management and Privacy Operations — powered by AI to find
-              sensitive data, score risk, and drive remediation across your
-              entire infrastructure.
+            <p className="text-lg sm:text-xl text-muted-foreground max-w-xl leading-relaxed text-pretty mb-9">
+              Discover every byte of sensitive data. Map every access path.
+              Remediate every risk — automatically. Built for the AI era,
+              ready for DPDPA, GDPR, HIPAA, and beyond.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 mb-12">
-              <Button variant="glow" size="xl" asChild>
+            <div className="flex flex-col sm:flex-row gap-4 mb-10">
+              <Button variant="gradient" size="xl" asChild>
                 <Link href="/contact" className="gap-2">
-                  Book a Demo <ArrowRight className="h-4 w-4" />
+                  Book Enterprise Demo
+                  <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
               <Button variant="secondary" size="xl" asChild>
@@ -78,54 +101,34 @@ function HeroSection() {
               </Button>
             </div>
 
-            {/* Trust bar */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.6 }}
-              className="flex items-center gap-3 text-xs text-muted-foreground"
+              transition={{ delay: 0.6, duration: 0.6 }}
+              className="space-y-4"
             >
-              <Shield className="h-4 w-4 text-primary" />
-              <span>Trusted by Fortune 500 enterprises, global banks, and healthcare leaders</span>
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground/80">
+                Trusted by enterprises across BFSI, Healthcare, Government
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="dpdpa">DPDPA 2023</Badge>
+                <Badge variant="cyan">GDPR</Badge>
+                <Badge variant="purple">HIPAA</Badge>
+                <Badge variant="green">SOC 2 Type II</Badge>
+                <Badge variant="outline">ISO 27001</Badge>
+              </div>
             </motion.div>
           </motion.div>
 
-          {/* Right — Animated dashboard preview */}
+          {/* Right — Live Dashboard */}
           <motion.div
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.8, delay: 0.3 }}
-            className="hidden lg:block"
+            className="relative"
           >
             <div className="animate-float">
-              <div className="rounded-xl border border-border bg-card/80 backdrop-blur-sm p-6 glow-border">
-                <div className="flex items-center justify-between mb-5">
-                  <span className="text-sm font-medium">Risk Overview</span>
-                  <Badge variant="green">Live</Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-4 mb-5">
-                  {[
-                    { label: "Data Sources", value: "43+", color: "text-blue-400" },
-                    { label: "PII Records", value: "2.4M", color: "text-cyan-400" },
-                    { label: "Risk Score", value: "94/100", color: "text-emerald-400" },
-                    { label: "Remediations", value: "1,247", color: "text-purple-400" },
-                  ].map((m) => (
-                    <div key={m.label} className="rounded-lg bg-background/60 border border-border p-3">
-                      <p className="text-xs text-muted-foreground mb-1">{m.label}</p>
-                      <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500"
-                    initial={{ width: 0 }}
-                    animate={{ width: "82%" }}
-                    transition={{ duration: 1.5, delay: 0.8 }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">82% of sensitive data remediated</p>
-              </div>
+              <LiveDashboardMock />
             </div>
           </motion.div>
         </div>
@@ -135,149 +138,74 @@ function HeroSection() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  2. TRUSTED BY                                                      */
+/*  2. LOGO MARQUEE                                                    */
 /* ------------------------------------------------------------------ */
-const logos = [
-  "Global Bank", "Healthcare Corp", "Fortune Tech", "FinServ Group",
-  "InsureCo", "Retail Giant", "CloudFirst Inc", "DataSec Ltd",
-];
-
-function TrustedBySection() {
+function LogoMarqueeSection() {
   return (
-    <Section variant="muted" className="py-16 lg:py-20">
-      <AnimatedSection>
-        <p className="text-center text-sm text-muted-foreground mb-8">
-          Trusted by security-forward enterprises worldwide
+    <section className="relative py-16 border-y border-border/50 bg-muted/30">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        <p className="text-center text-xs uppercase tracking-[0.2em] text-muted-foreground mb-10">
+          Built for security-forward enterprises worldwide
         </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-6">
-          {logos.map((name) => (
-            <div
-              key={name}
-              className="flex items-center justify-center h-12 rounded-lg bg-secondary/50 border border-border text-xs text-muted-foreground font-medium"
-            >
-              {name}
-            </div>
-          ))}
-        </div>
-      </AnimatedSection>
-    </Section>
+        <LogoMarquee />
+      </div>
+    </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  3. PLATFORM OVERVIEW                                               */
+/*  3. DIFFERENTIATION PILLARS                                         */
 /* ------------------------------------------------------------------ */
-const pillars = [
+const differentiators = [
   {
-    icon: Shield,
-    title: "DSPM",
-    subtitle: "Data Security Posture Management",
+    icon: Layers,
+    title: "Unified — not bolt-on",
     description:
-      "Continuously discover and classify sensitive data across your cloud, databases, and SaaS. Quantify risk posture and surface misconfigurations before they become breaches.",
-    href: "/dspm",
-    color: "blue" as const,
+      "One platform for DSPM + PrivacyOps + AI, not 4 acquisitions stapled together. Single data graph, one auth model, zero glue code.",
+    glowColor: "blue" as const,
   },
   {
-    icon: Scale,
-    title: "PrivacyOps",
-    subtitle: "Privacy Operations Automation",
+    icon: Cpu,
+    title: "Engineered, not assembled",
     description:
-      "Automate DSARs, manage consent, and maintain compliance workflows. Turn complex privacy regulations into executable, auditable processes.",
-    href: "/privacyops",
-    color: "cyan" as const,
+      "Temporal workflows, NATS event bus, hash-chained audit, 7-layer auth. Built like infrastructure, runs like a product.",
+    glowColor: "cyan" as const,
   },
   {
-    icon: Brain,
-    title: "AI Intelligence",
-    subtitle: "AI Co-Pilot & Governance",
+    icon: Bot,
+    title: "Governed AI",
     description:
-      "Natural-language co-pilot for security teams, auto-generated compliance narratives, and AI governance controls to manage model risk.",
-    href: "/ai-copilot",
-    color: "purple" as const,
+      "Fail-closed PII redaction, per-tenant gates, every prompt auditable. AI governance baked into the platform — not an afterthought.",
+    glowColor: "purple" as const,
+  },
+  {
+    icon: Globe,
+    title: "DPDPA-ready + Global",
+    description:
+      "India-first compliance, GDPR/CCPA/HIPAA from day one. 16+ frameworks. The first DSPM truly built for DPDPA 2023.",
+    glowColor: "green" as const,
   },
 ];
 
-const pillarBorderMap = {
-  blue: "hover:border-blue-500/40",
-  cyan: "hover:border-cyan-500/40",
-  purple: "hover:border-purple-500/40",
-};
-
-const pillarIconBg = {
-  blue: "bg-blue-500/10 text-blue-400",
-  cyan: "bg-cyan-500/10 text-cyan-400",
-  purple: "bg-purple-500/10 text-purple-400",
-};
-
-function PlatformOverviewSection() {
+function DifferentiationSection() {
   return (
-    <Section variant="radial">
+    <Section variant="default" pattern="grid">
       <SectionHeader
-        badge="Platform"
-        title="One Platform."
-        titleGradient="Complete Data Intelligence."
-        description="Three integrated pillars that give your security and privacy teams a single source of truth."
+        eyebrow="Why TechD"
+        badge="Differentiation"
+        title="Built different. Engineered to"
+        titleGradient="prove it."
+        description="Four foundational decisions that separate TechD from every legacy DSPM and privacy point tool on the market."
       />
-      <StaggerContainer className="grid md:grid-cols-3 gap-8">
-        {pillars.map((p) => (
-          <StaggerItem key={p.title}>
-            <Link href={p.href} className="block h-full">
-              <Card className={`h-full card-hover ${pillarBorderMap[p.color]}`}>
-                <CardHeader>
-                  <div className={`inline-flex rounded-lg p-2.5 mb-3 ${pillarIconBg[p.color]}`}>
-                    <p.icon className="h-6 w-6" />
-                  </div>
-                  <CardTitle className="text-xl">{p.title}</CardTitle>
-                  <CardDescription>{p.subtitle}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                    {p.description}
-                  </p>
-                  <span className="inline-flex items-center text-sm text-primary font-medium gap-1 group-hover:gap-2 transition-all">
-                    Learn more <ChevronRight className="h-4 w-4" />
-                  </span>
-                </CardContent>
-              </Card>
-            </Link>
-          </StaggerItem>
-        ))}
-      </StaggerContainer>
-    </Section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  4. FEATURE GRID                                                    */
-/* ------------------------------------------------------------------ */
-const features = [
-  { icon: Search, title: "Data Discovery", description: "Scan structured and unstructured data stores to build a comprehensive data map across your entire infrastructure.", glowColor: "blue" as const },
-  { icon: Tags, title: "Classification", description: "AI-powered classifiers identify PII, PHI, PCI, and custom data types with enterprise-grade accuracy.", glowColor: "cyan" as const },
-  { icon: FileCheck, title: "DSAR Automation", description: "Fulfill data subject access requests in minutes instead of weeks with automated discovery and packaging.", glowColor: "purple" as const },
-  { icon: ToggleRight, title: "Consent Management", description: "Centralized consent lifecycle management with real-time enforcement across all downstream systems.", glowColor: "green" as const },
-  { icon: Wrench, title: "Remediation Engine", description: "12 built-in remediation actions — from masking and encryption to access revocation and data deletion.", glowColor: "blue" as const },
-  { icon: Scale, title: "Compliance Automation", description: "Continuous monitoring mapped to GDPR, CCPA, HIPAA, and eight additional regulatory frameworks.", glowColor: "cyan" as const },
-  { icon: Bot, title: "AI Co-Pilot", description: "Ask questions in plain English. Get instant insights, generate reports, and trigger actions conversationally.", glowColor: "purple" as const },
-  { icon: Activity, title: "Real-time Monitoring", description: "Live dashboards and alerting for data access anomalies, policy violations, and posture drift.", glowColor: "green" as const },
-];
-
-function FeatureGridSection() {
-  return (
-    <Section>
-      <SectionHeader
-        badge="Capabilities"
-        title="Everything You Need to"
-        titleGradient="Secure Sensitive Data"
-        description="A comprehensive feature set purpose-built for enterprise data security and privacy teams."
-      />
-      <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {features.map((f) => (
-          <StaggerItem key={f.title}>
+      <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {differentiators.map((d) => (
+          <StaggerItem key={d.title}>
             <IconCard
-              icon={f.icon}
-              title={f.title}
-              description={f.description}
-              glowColor={f.glowColor}
+              icon={d.icon}
+              title={d.title}
+              description={d.description}
+              glowColor={d.glowColor}
+              className="h-full"
             />
           </StaggerItem>
         ))}
@@ -287,129 +215,169 @@ function FeatureGridSection() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  5. ARCHITECTURE VISUALIZATION                                      */
+/*  4. PRODUCT TRIPTYCH                                                */
 /* ------------------------------------------------------------------ */
-const archStages = [
-  { label: "Connectors", sub: "43+ Sources", color: "border-blue-500/50", bg: "bg-blue-500/10", text: "text-blue-400" },
-  { label: "Ingestion", sub: "Real-time", color: "border-cyan-500/50", bg: "bg-cyan-500/10", text: "text-cyan-400" },
-  { label: "Classification", sub: "AI Engine", color: "border-purple-500/50", bg: "bg-purple-500/10", text: "text-purple-400" },
-  { label: "Risk Engine", sub: "Scoring", color: "border-emerald-500/50", bg: "bg-emerald-500/10", text: "text-emerald-400" },
-  { label: "AI Layer", sub: "Co-Pilot", color: "border-purple-500/50", bg: "bg-purple-500/10", text: "text-purple-400" },
-  { label: "Dashboard", sub: "Insights", color: "border-blue-500/50", bg: "bg-blue-500/10", text: "text-blue-400" },
+const triptych = [
+  {
+    icon: Shield,
+    name: "DSPM",
+    tagline: "Data Security Posture Management",
+    href: "/dspm",
+    accent: "blue" as const,
+    bullets: [
+      "Data Graph Intelligence across 43+ connectors",
+      "Attack path analysis surfaces real exposure",
+      "12 native remediation actions, fully automated",
+      "Shadow data discovery with zero blind spots",
+    ],
+  },
+  {
+    icon: Scale,
+    name: "PrivacyOps",
+    tagline: "Privacy Operations Automation",
+    href: "/privacyops",
+    accent: "cyan" as const,
+    bullets: [
+      "DSAR fulfillment in hours, not weeks",
+      "Consent + preference orchestration at scale",
+      "DPDPA-native workflows out of the box",
+      "Hash-chained audit log for every action",
+    ],
+  },
+  {
+    icon: Brain,
+    name: "AI Co-Pilot",
+    tagline: "Governed AI for Security Teams",
+    href: "/ai-copilot",
+    accent: "purple" as const,
+    bullets: [
+      "Natural-language risk and policy queries",
+      "Fail-closed PII redaction on every prompt",
+      "Per-tenant model gates and audit trails",
+      "Auto-generated compliance narratives",
+    ],
+  },
 ];
 
-function ArchitectureSection() {
+const accentMap = {
+  blue: {
+    border: "hover:border-blue-500/40",
+    iconBg: "bg-blue-500/10 border-blue-500/20",
+    iconText: "text-blue-400",
+    link: "text-blue-400",
+    glow: "shadow-blue-500/10",
+  },
+  cyan: {
+    border: "hover:border-cyan-500/40",
+    iconBg: "bg-cyan-500/10 border-cyan-500/20",
+    iconText: "text-cyan-400",
+    link: "text-cyan-400",
+    glow: "shadow-cyan-500/10",
+  },
+  purple: {
+    border: "hover:border-purple-500/40",
+    iconBg: "bg-purple-500/10 border-purple-500/20",
+    iconText: "text-purple-400",
+    link: "text-purple-400",
+    glow: "shadow-purple-500/10",
+  },
+};
+
+function ProductTriptychSection() {
   return (
     <Section variant="muted">
       <SectionHeader
-        badge="Architecture"
-        title="Enterprise-Grade"
-        titleGradient="Architecture"
-        description="A multi-layered pipeline from ingestion to insight — built for scale, security, and speed."
+        badge="Platform"
+        title="Three platforms."
+        titleGradient="One source of truth."
+        description="A single data graph powers all three. Insights flow between products in real time — no integration tax, no duplicated work."
       />
-      <AnimatedSection>
-        <div className="relative rounded-xl border border-border bg-card/50 p-8 lg:p-12 overflow-hidden">
-          <div className="absolute inset-0 grid-bg opacity-40" />
-
-          {/* Desktop flow */}
-          <div className="relative hidden md:flex items-center justify-between gap-2">
-            {archStages.map((stage, i) => (
-              <div key={stage.label} className="flex items-center gap-2 flex-1">
-                <div className={`flex-1 rounded-lg border ${stage.color} ${stage.bg} p-4 text-center`}>
-                  <p className={`text-sm font-semibold ${stage.text}`}>{stage.label}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{stage.sub}</p>
-                  <div className="mt-2 mx-auto h-1 w-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 animate-pulse-glow" />
-                </div>
-                {i < archStages.length - 1 && (
-                  <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Mobile stack */}
-          <div className="relative flex flex-col gap-3 md:hidden">
-            {archStages.map((stage, i) => (
-              <div key={stage.label}>
-                <div className={`rounded-lg border ${stage.color} ${stage.bg} p-4 text-center`}>
-                  <p className={`text-sm font-semibold ${stage.text}`}>{stage.label}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{stage.sub}</p>
-                </div>
-                {i < archStages.length - 1 && (
-                  <div className="flex justify-center py-1">
-                    <div className="h-4 w-px bg-border" />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </AnimatedSection>
+      <StaggerContainer className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+        {triptych.map((p) => {
+          const a = accentMap[p.accent];
+          return (
+            <StaggerItem key={p.name}>
+              <Link href={p.href} className="block h-full group">
+                <Card
+                  className={`h-full glass-card-elevated card-hover transition-all border-border/60 ${a.border} ${a.glow}`}
+                >
+                  <CardHeader>
+                    <div
+                      className={`inline-flex rounded-lg border p-3 mb-4 ${a.iconBg}`}
+                    >
+                      <p.icon className={`h-6 w-6 ${a.iconText}`} />
+                    </div>
+                    <CardTitle className="text-2xl font-display">
+                      {p.name}
+                    </CardTitle>
+                    <CardDescription className="text-sm">
+                      {p.tagline}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-3 mb-6">
+                      {p.bullets.map((b) => (
+                        <li
+                          key={b}
+                          className="flex items-start gap-2.5 text-sm text-muted-foreground leading-relaxed"
+                        >
+                          <ChevronRight
+                            className={`h-4 w-4 mt-0.5 shrink-0 ${a.iconText}`}
+                          />
+                          <span>{b}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <span
+                      className={`inline-flex items-center text-sm font-semibold gap-1.5 transition-all group-hover:gap-2.5 ${a.link}`}
+                    >
+                      Explore <ArrowRight className="h-4 w-4" />
+                    </span>
+                  </CardContent>
+                </Card>
+              </Link>
+            </StaggerItem>
+          );
+        })}
+      </StaggerContainer>
     </Section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  6. REMEDIATION STORY                                               */
+/*  5. DATA GRAPH SHOWCASE                                             */
 /* ------------------------------------------------------------------ */
-const remediationSteps = [
-  {
-    step: 1,
-    title: "Discover",
-    description: "Scan and discover sensitive data across 43+ connectors — cloud, databases, SaaS, and on-prem.",
-    icon: Search,
-    color: "text-blue-400",
-    border: "border-blue-500/40",
-    bg: "bg-blue-500/10",
-  },
-  {
-    step: 2,
-    title: "Classify & Score",
-    description: "AI classifies data types (PII, PHI, PCI) and assigns contextual risk scores automatically.",
-    icon: Brain,
-    color: "text-cyan-400",
-    border: "border-cyan-500/40",
-    bg: "bg-cyan-500/10",
-  },
-  {
-    step: 3,
-    title: "Remediate",
-    description: "Trigger automated remediation — masking, encryption, access revocation — or guided manual actions.",
-    icon: Wrench,
-    color: "text-emerald-400",
-    border: "border-emerald-500/40",
-    bg: "bg-emerald-500/10",
-  },
-];
-
-function RemediationSection() {
+function DataGraphSection() {
   return (
     <Section variant="radial">
       <SectionHeader
-        badge="How It Works"
-        title="From Detection to Remediation"
-        titleGradient="in Minutes"
-        description="Three steps to transform your data security posture from reactive to proactive."
+        badge="Data Graph Intelligence"
+        badgeVariant="cyan"
+        title="See"
+        titleGradient="every byte. Map every access path."
+        description="Data Graph Intelligence reveals exactly who can access what — and traces the path attackers would take. The signature TechD differentiator."
       />
-      <AnimatedSection>
-        <div className="grid md:grid-cols-3 gap-8 relative">
-          {/* Connecting line (desktop) */}
-          <div className="hidden md:block absolute top-24 left-[20%] right-[20%] h-px bg-gradient-to-r from-blue-500/40 via-cyan-500/40 to-emerald-500/40" />
 
-          {remediationSteps.map((s) => (
-            <div key={s.step} className="relative text-center">
-              <div className={`inline-flex items-center justify-center h-12 w-12 rounded-full border-2 ${s.border} ${s.bg} mb-5 mx-auto`}>
-                <span className={`text-lg font-bold ${s.color}`}>{s.step}</span>
-              </div>
-              <div className={`inline-flex rounded-lg p-2.5 mb-4 ${s.bg}`}>
-                <s.icon className={`h-5 w-5 ${s.color}`} />
-              </div>
-              <h3 className="text-lg font-semibold mb-2">{s.title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
-                {s.description}
-              </p>
-            </div>
-          ))}
+      <AnimatedSection>
+        <div className="relative rounded-2xl border border-border/60 glass-card-elevated p-6 lg:p-10 overflow-hidden">
+          <div className="absolute inset-0 grid-bg-dense opacity-40" />
+          <div className="relative">
+            <DataGraphVisual />
+          </div>
+        </div>
+      </AnimatedSection>
+
+      <AnimatedSection delay={0.2}>
+        <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="rounded-xl border border-border/60 glass-card p-8 text-center">
+            <MetricCounter value={43} suffix="+" label="Connectors" />
+          </div>
+          <div className="rounded-xl border border-border/60 glass-card p-8 text-center">
+            <MetricCounter value={12} label="Remediation Actions" />
+          </div>
+          <div className="rounded-xl border border-border/60 glass-card p-8 text-center">
+            <MetricCounter value={200} prefix="<" suffix="ms" label="P95 Latency" />
+          </div>
         </div>
       </AnimatedSection>
     </Section>
@@ -417,70 +385,104 @@ function RemediationSection() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  7. CONNECTORS OVERVIEW                                             */
+/*  6. HOW IT WORKS                                                    */
 /* ------------------------------------------------------------------ */
-const connectorCategories = [
+const howSteps = [
   {
-    category: "Cloud",
-    icon: Cloud,
-    items: ["AWS S3", "Azure Blob", "GCP Storage"],
-    color: "text-blue-400",
+    step: 1,
+    icon: Search,
+    title: "Discover",
+    description:
+      "Connect 43+ sources in minutes. Find every data store — cloud, SaaS, database, on-prem. Including the shadow data you didn't know existed.",
+    color: "blue",
   },
   {
-    category: "Databases",
-    icon: Database,
-    items: ["PostgreSQL", "MySQL", "Snowflake", "BigQuery", "MongoDB", "SQL Server"],
-    color: "text-cyan-400",
+    step: 2,
+    icon: Tags,
+    title: "Classify",
+    description:
+      "AI engine identifies PII, PHI, PCI, custom types. Multi-language. Confidence-scored. Continuously learning.",
+    color: "cyan",
   },
   {
-    category: "SaaS",
-    icon: Globe,
-    items: ["Salesforce", "Okta"],
-    color: "text-purple-400",
+    step: 3,
+    icon: MapIcon,
+    title: "Map Risk",
+    description:
+      "Build the data graph. Trace identity-to-data access. Surface attack paths and contextual risk in real time.",
+    color: "purple",
   },
   {
-    category: "Infrastructure",
-    icon: Server,
-    items: ["On-Prem File Shares", "APIs", "Data Lakes"],
-    color: "text-emerald-400",
+    step: 4,
+    icon: Wrench,
+    title: "Remediate",
+    description:
+      "Trigger one of 12 native actions. Or queue a guided manual workflow. Hash-chained audit on every step.",
+    color: "emerald",
   },
 ];
 
-function ConnectorsSection() {
+const stepColorMap: Record<string, { ring: string; bg: string; text: string }> = {
+  blue: {
+    ring: "border-blue-500/40",
+    bg: "bg-blue-500/10",
+    text: "text-blue-400",
+  },
+  cyan: {
+    ring: "border-cyan-500/40",
+    bg: "bg-cyan-500/10",
+    text: "text-cyan-400",
+  },
+  purple: {
+    ring: "border-purple-500/40",
+    bg: "bg-purple-500/10",
+    text: "text-purple-400",
+  },
+  emerald: {
+    ring: "border-emerald-500/40",
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-400",
+  },
+};
+
+function HowItWorksSection() {
   return (
     <Section>
       <SectionHeader
-        badge="Integrations"
-        title="43+ Enterprise"
-        titleGradient="Connectors"
-        description="Connect to every data store in your stack. New connectors added every month."
+        badge="How It Works"
+        title="From discovery to remediation in"
+        titleGradient="minutes, not months."
+        description="A four-stage lifecycle that turns raw infrastructure into a continuously-governed, audit-ready data estate."
       />
-      <StaggerContainer className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        {connectorCategories.map((cat) => (
-          <StaggerItem key={cat.category}>
-            <Card className="card-hover h-full">
-              <CardHeader>
-                <cat.icon className={`h-5 w-5 mb-2 ${cat.color}`} />
-                <CardTitle>{cat.category}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {cat.items.map((item) => (
-                    <Badge key={item} variant="outline" className="text-xs">
-                      {item}
-                    </Badge>
-                  ))}
+
+      <AnimatedSection>
+        <div className="relative">
+          {/* Horizontal connector line for desktop */}
+          <div className="hidden lg:block absolute top-12 left-[10%] right-[10%] h-px bg-gradient-to-r from-blue-500/40 via-cyan-500/40 via-purple-500/40 to-emerald-500/40" />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {howSteps.map((s) => {
+              const c = stepColorMap[s.color];
+              return (
+                <div key={s.step} className="relative text-center">
+                  <div
+                    className={`relative z-10 inline-flex items-center justify-center h-24 w-24 rounded-full border-2 ${c.ring} ${c.bg} mb-6 mx-auto bg-background`}
+                  >
+                    <s.icon className={`h-9 w-9 ${c.text}`} />
+                    <span
+                      className={`absolute -top-1 -right-1 h-7 w-7 rounded-full bg-background border-2 ${c.ring} flex items-center justify-center text-xs font-bold ${c.text}`}
+                    >
+                      {s.step}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2">{s.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
+                    {s.description}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          </StaggerItem>
-        ))}
-      </StaggerContainer>
-      <AnimatedSection delay={0.2}>
-        <div className="text-center">
-          <Badge variant="cyan" className="text-sm px-5 py-1.5">
-            43+ connectors and growing
-          </Badge>
+              );
+            })}
+          </div>
         </div>
       </AnimatedSection>
     </Section>
@@ -488,44 +490,115 @@ function ConnectorsSection() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  8. COMPLIANCE COVERAGE                                             */
+/*  7. COMPARE TABLE                                                   */
 /* ------------------------------------------------------------------ */
-const regulations = [
-  { name: "GDPR", region: "EU" },
-  { name: "CCPA / CPRA", region: "California" },
-  { name: "HIPAA", region: "US Healthcare" },
-  { name: "ISO 27001", region: "International" },
-  { name: "SOC 2", region: "International" },
-  { name: "PCI DSS", region: "Payment Industry" },
-  { name: "DPDP", region: "India" },
-  { name: "LGPD", region: "Brazil" },
+const compareCategories = [
+  {
+    category: "Platform Architecture",
+    rows: [
+      {
+        feature: "Unified DSPM + PrivacyOps",
+        values: ["yes", "partial", "no", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "Hash-Chained Audit Log",
+        values: ["yes", "no", "no", "partial"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "Multi-Tenant RLS Enforcement",
+        values: ["yes", "partial", "no", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "Temporal Workflow Engine",
+        values: ["yes", "no", "no", "no"] as ("yes" | "no" | "partial")[],
+      },
+    ],
+  },
+  {
+    category: "DSPM Capabilities",
+    rows: [
+      {
+        feature: "Data Graph Intelligence",
+        values: ["yes", "partial", "yes", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "Attack Path Analysis",
+        values: ["yes", "no", "partial", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "Native Remediation Actions",
+        values: ["yes", "partial", "partial", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "43+ Native Connectors",
+        values: ["yes", "yes", "partial", "partial"] as ("yes" | "no" | "partial")[],
+      },
+    ],
+  },
+  {
+    category: "PrivacyOps Suite",
+    rows: [
+      {
+        feature: "DPDPA Automation",
+        values: ["yes", "partial", "no", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "Consent Orchestration",
+        values: ["yes", "yes", "no", "partial"] as ("yes" | "no" | "partial")[],
+      },
+    ],
+  },
+  {
+    category: "AI & Governance",
+    rows: [
+      {
+        feature: "Fail-Closed AI Redaction",
+        values: ["yes", "no", "no", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "AI Governance Module",
+        values: ["yes", "partial", "no", "no"] as ("yes" | "no" | "partial")[],
+      },
+      {
+        feature: "Cyber Valley R&D",
+        values: ["yes", "no", "no", "no"] as ("yes" | "no" | "partial")[],
+      },
+    ],
+  },
 ];
 
-function ComplianceSection() {
+function CompareSection() {
   return (
     <Section variant="muted">
       <SectionHeader
-        badge="Compliance"
-        title="Continuous Compliance"
-        titleGradient="Monitoring"
-        description="Map your data posture to major regulatory frameworks automatically. Stay audit-ready 24/7."
+        badge="Comparison"
+        title="Why teams choose"
+        titleGradient="TechD."
+        description="Side-by-side capability comparison against the legacy and challenger DSPM and privacy vendors."
       />
-      <StaggerContainer className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {regulations.map((reg) => (
-          <StaggerItem key={reg.name}>
-            <div className="rounded-xl border border-border bg-card p-5 text-center card-hover">
-              <Lock className="h-5 w-5 text-primary mx-auto mb-3" />
-              <p className="font-semibold text-sm mb-1">{reg.name}</p>
-              <p className="text-xs text-muted-foreground">{reg.region}</p>
-            </div>
-          </StaggerItem>
-        ))}
-      </StaggerContainer>
-      <AnimatedSection delay={0.3}>
-        <div className="mt-10 text-center">
-          <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            Continuous compliance monitoring across all frameworks
+      <AnimatedSection>
+        <CompareTable
+          competitors={["TechD", "OneTrust", "Redacto", "FOCTTA"]}
+          categories={compareCategories}
+        />
+      </AnimatedSection>
+    </Section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  8. METRICS BAR                                                     */
+/* ------------------------------------------------------------------ */
+function MetricsBarSection() {
+  return (
+    <Section variant="radial">
+      <AnimatedSection>
+        <div className="rounded-2xl border border-border/60 glass-card-elevated p-10 lg:p-14">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-10 text-center">
+            <MetricCounter value={43} suffix="+" label="Connectors" />
+            <MetricCounter value={12} label="Action Types" />
+            <MetricCounter value={60} suffix="+" label="RLS Tables" />
+            <MetricCounter value={99.99} suffix="%" label="SLA" />
           </div>
         </div>
       </AnimatedSection>
@@ -534,37 +607,20 @@ function ComplianceSection() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  9. METRICS / STATS                                                 */
+/*  9. COMPLIANCE / REGULATION RIBBON                                  */
 /* ------------------------------------------------------------------ */
-const stats = [
-  { value: "43+", label: "Connectors", color: "text-blue-400" },
-  { value: "12", label: "Remediation Actions", color: "text-cyan-400" },
-  { value: "60+", label: "RLS-Protected Tables", color: "text-purple-400" },
-  { value: "99.9%", label: "Uptime SLA", color: "text-emerald-400" },
-];
-
-function MetricsSection() {
+function ComplianceSection() {
   return (
-    <Section>
+    <Section pattern="dots">
+      <SectionHeader
+        badge="DPDPA · GDPR · HIPAA · 16+ frameworks"
+        badgeVariant="amber"
+        title=""
+        titleGradient="Globally compliant, locally ready."
+        description="From India's DPDPA to EU's GDPR — automated compliance across 16+ frameworks. Continuously mapped, continuously monitored, continuously audit-ready."
+      />
       <AnimatedSection>
-        <div className="rounded-xl border border-border bg-card/50 glow-border p-10 lg:p-14">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-10 text-center">
-            {stats.map((s) => (
-              <div key={s.label}>
-                <motion.p
-                  className={`text-4xl lg:text-5xl font-bold mb-2 ${s.color}`}
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.5, type: "spring" }}
-                >
-                  {s.value}
-                </motion.p>
-                <p className="text-sm text-muted-foreground">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <RegulationRibbon />
       </AnimatedSection>
     </Section>
   );
@@ -576,52 +632,49 @@ function MetricsSection() {
 const testimonials = [
   {
     quote:
-      "TechD PrivacyOps cut our DSAR response time from three weeks to under 48 hours. The AI classification accuracy is unlike anything we have evaluated before.",
-    name: "Sarah Chen",
-    title: "CISO",
-    company: "Fortune 500 Financial Services",
+      "TechD replaced four separate vendors. The unified data graph alone changed how we run DSARs.",
+    role: "VP Engineering",
+    org: "Top-3 Indian Bank",
+    industry: "BFSI",
   },
   {
     quote:
-      "We achieved continuous HIPAA compliance across 200+ data stores within the first quarter. The remediation engine alone justified the investment.",
-    name: "Michael Torres",
-    title: "VP of Data Security",
-    company: "National Healthcare Network",
+      "The attack path analysis surfaced 14 high-risk exposures our previous DSPM missed entirely.",
+    role: "Director of Data Security",
+    org: "Global Healthcare Network",
+    industry: "Healthcare",
   },
 ];
 
 function TestimonialSection() {
   return (
-    <Section variant="radial">
+    <Section variant="muted">
       <SectionHeader
-        badge="Customers"
-        title="Trusted by"
-        titleGradient="Security Leaders"
+        badge="Customer Voice"
+        title="What security leaders are"
+        titleGradient="actually saying."
       />
       <StaggerContainer className="grid md:grid-cols-2 gap-8">
         {testimonials.map((t) => (
-          <StaggerItem key={t.name}>
-            <Card className="h-full card-hover">
-              <CardContent className="pt-6">
-                <Quote className="h-8 w-8 text-primary/30 mb-4" />
-                <p className="text-sm text-muted-foreground leading-relaxed mb-6 italic">
+          <StaggerItem key={t.org}>
+            <Card className="h-full glass-card-elevated card-hover">
+              <CardContent className="pt-8 pb-8 px-8">
+                <Quote className="h-10 w-10 text-primary/30 mb-6" />
+                <p className="text-lg leading-relaxed text-pretty mb-8 font-display">
                   &ldquo;{t.quote}&rdquo;
                 </p>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-sm font-bold text-primary">
-                    {t.name.charAt(0)}
+                <div className="pt-6 border-t border-border/60">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">{t.role}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t.org}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+                      {t.industry}
+                    </Badge>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {t.title}, {t.company}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-0.5 mt-4">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -637,26 +690,26 @@ function TestimonialSection() {
 /* ------------------------------------------------------------------ */
 export default function Home() {
   return (
-    <>
+    <main className="relative overflow-hidden">
       <HeroSection />
-      <TrustedBySection />
-      <PlatformOverviewSection />
-      <FeatureGridSection />
-      <ArchitectureSection />
-      <RemediationSection />
-      <ConnectorsSection />
+      <LogoMarqueeSection />
+      <DifferentiationSection />
+      <ProductTriptychSection />
+      <DataGraphSection />
+      <HowItWorksSection />
+      <CompareSection />
+      <MetricsBarSection />
       <ComplianceSection />
-      <MetricsSection />
       <TestimonialSection />
       <CTASection
-        title="Ready to Secure Your Data?"
-        titleGradient="Automatically."
-        description="Join enterprises worldwide who trust TechD PrivacyOps to discover, classify, and remediate data risk across their entire infrastructure."
-        primaryCta="Book a Demo"
+        title="Stop chasing data risk."
+        titleGradient="Start fixing it."
+        description="See TechD PrivacyOps in action. 30-minute personalized demo with our solutions team."
+        primaryCta="Book Enterprise Demo"
         primaryHref="/contact"
         secondaryCta="Explore Platform"
         secondaryHref="/platform"
       />
-    </>
+    </main>
   );
 }

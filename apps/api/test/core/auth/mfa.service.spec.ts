@@ -48,7 +48,7 @@ describe('MfaService', () => {
       const unique = new Set(codes);
       expect(unique.size).toBe(8);
       codes.forEach((code) => {
-        expect(code).toMatch(/^[a-f0-9]{8}$/);
+        expect(code).toMatch(/^[a-f0-9]{32}$/);
       });
     });
   });

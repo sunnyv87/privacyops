@@ -20,6 +20,9 @@ describe('DsarService', () => {
     dataSubject: {
       findFirst: jest.fn(),
       create: jest.fn(),
+      update: jest.fn().mockImplementation(({ where, data }) =>
+        Promise.resolve({ id: where?.id ?? 'ds-1', ...data }),
+      ),
     },
     dataAsset: {
       findMany: jest.fn(),

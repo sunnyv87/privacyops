@@ -26,6 +26,8 @@ describe('EventConsumersService', () => {
   const mockPrisma = {
     incident: { create: jest.fn(), count: jest.fn().mockResolvedValue(0) },
     auditLog: { create: jest.fn() },
+    tenant: { findUnique: jest.fn().mockResolvedValue({ id: 'tenant-1' }) },
+    asset: { findMany: jest.fn().mockResolvedValue([]) },
   };
 
   const mockModuleRef = {

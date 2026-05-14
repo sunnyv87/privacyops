@@ -29,6 +29,7 @@ describe('AuditService', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue({}),
       },
+      $executeRawUnsafe: jest.fn().mockResolvedValue(undefined),
       $transaction: jest.fn().mockImplementation(async (args) => {
         if (Array.isArray(args)) {
           return Promise.all(args);

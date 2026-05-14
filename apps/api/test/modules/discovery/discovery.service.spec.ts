@@ -5,6 +5,7 @@ import { PrismaService } from '../../../src/core/prisma/prisma.service';
 import { AuditService } from '../../../src/core/audit/audit.service';
 import { EventBusService } from '../../../src/core/events/event-bus.service';
 import { ConnectorRegistry } from '../../../src/modules/connectors/connector-registry';
+import { MeteringService } from '../../../src/core/metering/metering.service';
 
 describe('DiscoveryService', () => {
   let service: DiscoveryService;
@@ -42,6 +43,7 @@ describe('DiscoveryService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditService, useValue: mockAudit },
         { provide: EventBusService, useValue: mockEvents },
+        { provide: MeteringService, useValue: { record: jest.fn(), recordUsage: jest.fn(), recordBatch: jest.fn() } },
         { provide: ConnectorRegistry, useValue: mockRegistry },
       ],
     }).compile();

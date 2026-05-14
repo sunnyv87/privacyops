@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ModuleRef } from '@nestjs/core';
 import { ScheduledJobsService } from '../../../src/core/workflow/scheduled-jobs.service';
 import { PrismaService } from '../../../src/core/prisma/prisma.service';
 import { WorkflowService } from '../../../src/core/workflow/workflow.service';
@@ -38,6 +39,8 @@ describe('ScheduledJobsService', () => {
         { provide: WorkflowService, useValue: mockWorkflows },
         { provide: EventBusService, useValue: mockEvents },
         { provide: NotificationsService, useValue: mockNotifications },
+        { provide: 'REDIS_CLIENT', useValue: { set: jest.fn().mockResolvedValue('OK') } },
+        { provide: ModuleRef, useValue: { get: jest.fn().mockReturnValue(null) } },
       ],
     }).compile();
 

@@ -4,6 +4,7 @@ import { PrismaService } from '@/core/prisma/prisma.service';
 import { AuditService } from '@/core/audit/audit.service';
 import { EventBusService } from '@/core/events/event-bus.service';
 import { ConnectorRegistry } from '@/modules/connectors/connector-registry';
+import { MeteringService } from '@/core/metering/metering.service';
 
 describe('DiscoveryService — Enrichment Phases', () => {
   let service: DiscoveryService;
@@ -100,6 +101,7 @@ describe('DiscoveryService — Enrichment Phases', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: EventBusService, useValue: events },
+        { provide: MeteringService, useValue: { record: jest.fn(), recordUsage: jest.fn(), recordBatch: jest.fn() } },
         { provide: ConnectorRegistry, useValue: connectorRegistry },
       ],
     }).compile();

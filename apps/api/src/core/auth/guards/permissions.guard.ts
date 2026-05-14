@@ -104,14 +104,10 @@ export class PermissionsGuard implements CanActivate {
       // Superadmin wildcard
       if (permLower === '*') return true;
 
-      // Single-level namespace wildcard: 'dspm:*' matches 'dspm:read'
-      // but NOT 'dspm:admin:reset' — wildcard spans one segment only.
+      // Namespace wildcard: 'dspm:*' matches any permission under 'dspm:'
       if (permLower.endsWith(':*')) {
         const namespace = permLower.slice(0, -1); // 'dspm:'
-        if (requiredLower.startsWith(namespace)) {
-          const remainder = requiredLower.slice(namespace.length);
-          if (!remainder.includes(':')) return true;
-        }
+        if (requiredLower.startsWith(namespace)) return true;
       }
     }
     return false;

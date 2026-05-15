@@ -428,10 +428,21 @@ export class IncidentsService {
       throw new NotFoundException(`Incident ${incidentId} not found`);
     }
 
-    const notifications = (incident.regulatoryNotifications as Record<string, any>) || {};
-    const deadlines = notifications.deadlines || {};
-    const notified = notifications.notified || [];
+    const regulatoryInfo = (incident.regulatoryNotifications as Record<string, any>) || {};
+    const deadlines = regulatoryInfo.deadlines || {};
     const now = new Date();
+
+    // Read notifications from the first-class table
+    const sentNotifications = await this.prisma.incidentNotification.findMany({
+      where: { tenantId, incidentId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const notifiedRegulations = new Set(
+      sentNotifications
+        .filter((n: any) => n.status === 'sent' || n.status === 'confirmed')
+        .map((n: any) => n.regulation),
+    );
 
     const remainingDeadlines = Object.entries(deadlines).map(
       ([regulation, deadline]) => {
@@ -439,9 +450,7 @@ export class IncidentsService {
         const remainingMs = deadlineDate.getTime() - now.getTime();
         const remainingHours = Math.max(0, Math.round(remainingMs / (1000 * 60 * 60) * 10) / 10);
         const isOverdue = remainingMs < 0;
-        const isNotified = notified.some(
-          (n: any) => n.regulation === regulation,
-        );
+        const isNotified = notifiedRegulations.has(regulation);
 
         return {
           regulation,
@@ -455,9 +464,74 @@ export class IncidentsService {
 
     return {
       incidentId,
-      notificationsSent: notified,
+      notificationsSent: sentNotifications,
       remainingDeadlines,
     };
+  }
+
+  async recordNotification(
+    tenantId: string,
+    incidentId: string,
+    actorId: string,
+    dto: {
+      regulation: string;
+      authority: string;
+      channel: string;
+      confirmationRef?: string;
+    },
+  ) {
+    const incident = await this.prisma.incident.findFirst({
+      where: { id: incidentId, tenantId, deletedAt: null },
+    });
+
+    if (!incident) {
+      throw new NotFoundException(`Incident ${incidentId} not found`);
+    }
+
+    const notification = await this.prisma.incidentNotification.create({
+      data: {
+        tenantId,
+        incidentId,
+        regulation: dto.regulation,
+        authority: dto.authority,
+        channel: dto.channel,
+        status: 'sent',
+        sentAt: new Date(),
+        sentBy: actorId,
+        confirmationRef: dto.confirmationRef ?? null,
+      },
+    });
+
+    await this.audit.log({
+      tenantId,
+      actorId,
+      actorType: 'user',
+      action: 'incident.notification_sent',
+      entityType: 'incident_notification',
+      entityId: notification.id,
+      changes: {
+        after: {
+          incidentId,
+          regulation: dto.regulation,
+          authority: dto.authority,
+          channel: dto.channel,
+        },
+      },
+    });
+
+    await this.events.publish({
+      type: 'incident.notification_sent',
+      tenantId,
+      data: {
+        incidentId,
+        notificationId: notification.id,
+        regulation: dto.regulation,
+        authority: dto.authority,
+      },
+      timestamp: new Date(),
+    });
+
+    return notification;
   }
 
   // ---------------------------------------------------------------------------

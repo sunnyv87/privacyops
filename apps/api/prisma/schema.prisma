@@ -570,11 +570,38 @@ model Incident {
   updatedAt               DateTime  @updatedAt @map("updated_at")
   deletedAt               DateTime? @map("deleted_at")
 
+  notifications         IncidentNotification[]
+
   @@unique([tenantId, referenceNumber])
   @@index([tenantId])
   @@index([status])
   @@index([severity])
   @@map("incidents")
+}
+
+model IncidentNotification {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  incidentId      String    @map("incident_id") @db.Uuid
+  regulation      String    @db.VarChar(100) // gdpr, certIn, ccpa, etc.
+  authority       String    @db.VarChar(255) // Receiving authority name
+  channel         String    @db.VarChar(50) // email, portal, api
+  status          String    @default("pending") @db.VarChar(50) // pending, sent, confirmed, failed
+  sentAt          DateTime? @map("sent_at")
+  confirmedAt     DateTime? @map("confirmed_at")
+  confirmationRef String?   @map("confirmation_ref") @db.VarChar(255)
+  sentBy          String?   @map("sent_by") @db.Uuid
+  errorMessage    String?   @map("error_message") @db.Text
+  metadata        Json?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  incident Incident @relation(fields: [incidentId], references: [id])
+
+  @@index([tenantId])
+  @@index([incidentId])
+  @@index([tenantId, regulation])
+  @@map("incident_notifications")
 }
 
 // ============================================================================

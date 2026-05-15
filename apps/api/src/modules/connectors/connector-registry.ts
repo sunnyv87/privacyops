@@ -130,4 +130,30 @@ export class ConnectorRegistry {
       return connector.getMetadata();
     });
   }
+
+  getCapabilityMatrix(): Array<{
+    type: DataSourceType;
+    displayName: string;
+    capabilities: Record<string, boolean>;
+    hasDisposal: boolean;
+    hasAccessPolicies: boolean;
+  }> {
+    return Array.from(this.connectors.entries()).map(([type, factory]) => {
+      const connector = factory();
+      const meta = connector.getMetadata();
+      return {
+        type,
+        displayName: meta.displayName,
+        capabilities: {
+          discovery: meta.capabilities.supportsDiscovery,
+          contentSampling: meta.capabilities.supportsContentSampling,
+          accessAnalysis: meta.capabilities.supportsAccessAnalysis,
+          incrementalScan: meta.capabilities.supportsIncrementalScan,
+          encryptionCheck: meta.capabilities.supportsEncryptionCheck,
+        },
+        hasDisposal: typeof connector.disposeAsset === 'function',
+        hasAccessPolicies: typeof connector.getAccessPolicies === 'function',
+      };
+    });
+  }
 }

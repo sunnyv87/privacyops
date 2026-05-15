@@ -13,10 +13,40 @@ export class KmsService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     this.kmsKeyArn = this.config.get<string>('KMS_KEY_ARN') || null;
+    const azureVaultUrl = this.config.get<string>('AZURE_KEYVAULT_URL') || null;
+    const gcpKeyName = this.config.get<string>('GCP_KMS_KEY_NAME') || null;
 
     if (this.kmsKeyArn) {
       await this.initAwsKms();
+    } else if (azureVaultUrl) {
+      await this.initAzureKeyVault(azureVaultUrl);
+    } else if (gcpKeyName) {
+      await this.initGcpKms(gcpKeyName);
     } else {
+      this.initLocalMasterKey();
+    }
+  }
+
+  private async initAzureKeyVault(vaultUrl: string): Promise<void> {
+    try {
+      const { KeyClient } = await import('@azure/keyvault-keys');
+      const { DefaultAzureCredential } = await import('@azure/identity');
+      this.kmsClient = new KeyClient(vaultUrl, new DefaultAzureCredential());
+      this.logger.log(`Azure Key Vault client initialized: ${vaultUrl}`);
+    } catch (err) {
+      this.logger.error('Failed to initialize Azure Key Vault. Falling back to local master key.', err);
+      this.initLocalMasterKey();
+    }
+  }
+
+  private async initGcpKms(keyName: string): Promise<void> {
+    try {
+      const { KeyManagementServiceClient } = await import('@google-cloud/kms');
+      this.kmsClient = new KeyManagementServiceClient();
+      this.kmsKeyArn = keyName;
+      this.logger.log(`GCP KMS client initialized: ${keyName}`);
+    } catch (err) {
+      this.logger.error('Failed to initialize GCP KMS. Falling back to local master key.', err);
       this.initLocalMasterKey();
     }
   }

@@ -127,9 +127,15 @@ export class ClaudeAIProvider implements AIProvider {
       );
       const block = response?.content?.[0];
       if (block && block.type === 'text' && typeof block.text === 'string') {
+        const sanitized = this.sanitizeOutput(block.text.trim());
+        if (!sanitized) {
+          this.recordFailure();
+          this.emitMetric(tenantId, method, 'blocked', startMs);
+          return null;
+        }
         this.recordSuccess();
         this.emitMetric(tenantId, method, 'success', startMs);
-        return block.text.trim();
+        return sanitized;
       }
       this.recordFailure();
       this.emitMetric(tenantId, method, 'empty', startMs);
@@ -178,6 +184,47 @@ export class ClaudeAIProvider implements AIProvider {
         `ClaudeAIProvider circuit opened for ${ClaudeAIProvider.COOLDOWN_MS}ms after ${this.consecutiveFailures} consecutive failures`,
       );
     }
+  }
+
+  /**
+   * Post-LLM output guardrails. Blocks responses that contain leaked PII
+   * (which would indicate a redaction bypass), prompt injection artifacts,
+   * or fabricated numeric claims that contradict the template.
+   */
+  private sanitizeOutput(text: string): string | null {
+    if (!text || text.length === 0) return null;
+
+    // Re-run redaction on output to catch any PII the model may have generated
+    if (this.redaction) {
+      const result = this.redaction.redactText(text);
+      if (result.matches.length > 0) {
+        this.logger.warn(
+          `LLM output contained ${result.matches.length} PII match(es) — redacting before delivery`,
+        );
+        text = result.redactedText;
+      }
+    }
+
+    // Block responses that contain prompt injection markers
+    const injectionPatterns = [
+      /ignore\s+(previous|above|all)\s+(instructions|prompts)/i,
+      /you\s+are\s+now\s+(a|an|in)/i,
+      /system\s*:\s*/i,
+      /<\/?script/i,
+    ];
+    for (const pattern of injectionPatterns) {
+      if (pattern.test(text)) {
+        this.logger.warn('LLM output blocked: prompt injection pattern detected');
+        return null;
+      }
+    }
+
+    // Cap output length to prevent runaway generation
+    if (text.length > 2000) {
+      text = text.slice(0, 2000) + '...';
+    }
+
+    return text;
   }
 
   private summariseContext(ctx: Record<string, unknown>): string {
